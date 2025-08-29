@@ -18,33 +18,6 @@ from .utils import RateLimiter, _is_package_available, encode_image_base64, make
 
 logger = logging.getLogger(__name__)
 
-STRUCTURED_GENERATION_PROVIDERS = ["cerebras", "fireworks-ai"]
-CODEAGENT_RESPONSE_FORMAT = {
-    "type": "json_schema",
-    "json_schema": {
-        "schema": {
-            "additionalProperties": False,
-            "properties": {
-                "thought": {
-                    "description": "A free form text description of the thought process.",
-                    "title": "Thought",
-                    "type": "string",
-                },
-                "code": {
-                    "description": "Valid Python code snippet implementing the thought.",
-                    "title": "Code",
-                    "type": "string",
-                },
-            },
-            "required": ["thought", "code"],
-            "title": "ThoughtAndCodeAnswer",
-            "type": "object",
-        },
-        "name": "ThoughtAndCodeAnswer",
-        "strict": True,
-    },
-}
-
 
 def get_dict_from_nested_dataclasses(obj, ignore_key=None):
     def convert(obj):

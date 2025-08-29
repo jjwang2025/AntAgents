@@ -46,7 +46,6 @@ from .memory import (
     ToolCall,
 )
 from .models import (
-    CODEAGENT_RESPONSE_FORMAT,
     ChatMessage,
     ChatMessageStreamDelta,
     ChatMessageToolCall,
