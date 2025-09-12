@@ -14,3 +14,7 @@ from .monitoring import *
 from .tools import *
 from .utils import *
 from .cli import *
+from .scripts.text_web_browser import *
+from .scripts.text_inspector_tool import *
+from .scripts.visual_qa import *
+from .mcp_adapter import *

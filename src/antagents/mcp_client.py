@@ -69,11 +69,8 @@ class MCPClient:
         server_parameters: "StdioServerParameters" | dict[str, Any] | list["StdioServerParameters" | dict[str, Any]],
         adapter_kwargs: dict[str, Any] | None = None,
     ):
-        try:
-            from mcpadapt.core import MCPAdapt
-            from mcpadapt.antagents_adapter import antagentsAdapter
-        except ModuleNotFoundError:
-            raise ModuleNotFoundError("Please install 'mcp' extra to use MCPClient: `pip install 'antagents[mcp]'`")
+        from mcpadapt.core import MCPAdapt
+        from antagents import AntAgentsAdapter
         if isinstance(server_parameters, dict):
             transport = server_parameters.get("transport")
             if transport is None:
@@ -90,7 +87,7 @@ class MCPClient:
                     f"Unsupported transport: {transport}. Supported transports are 'streamable-http' and 'sse'."
                 )
         adapter_kwargs = adapter_kwargs or {}
-        self._adapter = MCPAdapt(server_parameters, antagentsAdapter(), **adapter_kwargs)
+        self._adapter = MCPAdapt(server_parameters, AntAgentsAdapter(), **adapter_kwargs)
         self._tools: list[Tool] | None = None
         self.connect()
 

@@ -3,17 +3,6 @@ import os
 import threading
 
 from dotenv import load_dotenv
-from scripts.text_inspector_tool import TextInspectorTool
-from scripts.text_web_browser import (
-    ArchiveSearchTool,
-    FinderTool,
-    FindNextTool,
-    PageDownTool,
-    PageUpTool,
-    SimpleTextBrowser,
-    VisitTool,
-)
-from scripts.visual_qa import visualizer
 
 from antagents import (
     GoogleSearchTool,
@@ -21,6 +10,16 @@ from antagents import (
     GeminiServerModel,
     OpenAIServerModel,
     ToolCallingAgent,
+    # TextWebView
+    ArchiveSearchTool,
+    FinderTool,
+    FindNextTool,
+    PageDownTool,
+    PageUpTool,
+    SimpleTextBrowser,
+    VisitTool,
+    TextInspectorTool,
+    visualizer,
 )
 
 
