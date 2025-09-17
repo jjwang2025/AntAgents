@@ -160,27 +160,48 @@ def visualizer(image_path: str, question: str | None = None) -> str:
     if not isinstance(image_path, str):
         raise Exception("You should provide at least `image_path` string argument to this tool!")
 
-    mime_type, _ = mimetypes.guess_type(image_path)
-    base64_image = encode_image(image_path)
-
+    zhipu_api_key = os.getenv("ZHIPU_API_KEY")
+    
+    # 读取并编码图片
+    with open(image_path, "rb") as img_file:
+        base64_data = base64.b64encode(img_file.read()).decode('utf-8')
+    
+    # 构建请求
     payload = {
-        "model": "gpt-4o",
+        "model": "glm-4v",
         "messages": [
             {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": question},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}},
-                ],
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_data}"
+                        }
+                    }
+                ]
             }
         ],
-        "max_tokens": 1000,
+        "max_tokens": 1000
     }
-    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"}
-    response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-    try:
-        output = response.json()["choices"][0]["message"]["content"]
-    except Exception:
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {zhipu_api_key}"
+    }
+    
+    # 发送请求
+    response = requests.post(
+        "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+        headers=headers,
+        json=payload
+    )
+    result = response.json()
+    
+    if "choices" in result:
+        output = result["choices"][0]["message"]["content"]
+    else:
         raise Exception(f"Response format unexpected: {response.json()}")
 
     if add_note:

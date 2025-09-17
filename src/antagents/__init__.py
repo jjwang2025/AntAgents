@@ -14,7 +14,10 @@ from .monitoring import *
 from .tools import *
 from .utils import *
 from .cli import *
+from .mcp_adapter import *
 from .scripts.text_web_browser import *
 from .scripts.text_inspector_tool import *
 from .scripts.visual_qa import *
-from .mcp_adapter import *
+from .scripts.run_agents import *
+from .scripts.reformulator import *
+from .scripts.gaia_scorer import *

@@ -128,6 +128,8 @@ class PlainTextConverter(DocumentConverter):
     """Anything with content type text/plain"""
 
     def convert(self, local_path: str, **kwargs: Any) -> None | DocumentConverterResult:
+        import pandas as pd
+        
         # Guess the content type from any file extension that might be around
         content_type, _ = mimetypes.guess_type("__placeholder" + kwargs.get("file_extension", ""))
 
@@ -138,8 +140,15 @@ class PlainTextConverter(DocumentConverter):
         #     return None
 
         text_content = ""
-        with open(local_path, "rt", encoding="utf-8") as fh:
-            text_content = fh.read()
+        if local_path.lower().endswith(('.xlsx', '.xls')):
+            # 处理 Excel 文件
+            if pd is None:
+                raise ImportError("pandas is required for Excel files")
+            df = pd.read_excel(local_path)
+            text_content = df.to_markdown(index=False)
+        else:
+            with open(local_path, "rt", encoding="utf-8") as fh:
+                text_content = fh.read()
         return DocumentConverterResult(
             title=None,
             text_content=text_content,
