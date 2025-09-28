@@ -43,46 +43,61 @@ class UserInputTool(Tool):
 
 
 class DuckDuckGoSearchTool(Tool):
-    name = "duckduckgo_search"
-    description = """Performs a DuckDuckGo web search using SerpAPI, then returns the top search results."""
-    inputs = {"query": {"type": "string", "description": "The search query to perform. If the original input includes an abbreviation, do not expand it into the full name."}}
+    """Web search tool that performs searches using the DuckDuckGo search engine.
+
+    Args:
+        max_results (`int`, default `10`): Maximum number of search results to return.
+        rate_limit (`float`, default `1.0`): Maximum queries per second. Set to `None` to disable rate limiting.
+        **kwargs: Additional keyword arguments for the `DDGS` client.
+
+    Examples:
+        ```python
+        >>> from antagents import DuckDuckGoSearchTool
+        >>> web_search_tool = DuckDuckGoSearchTool(max_results=5, rate_limit=2.0)
+        >>> results = web_search_tool("Hugging Face")
+        >>> print(results)
+        ```
+    """
+
+    name = "web_search"
+    description = """Performs a duckduckgo web search based on your query (think a Google search) then returns the top search results."""
+    inputs = {"query": {"type": "string", "description": "The search query to perform."}}
     output_type = "string"
 
-    def __init__(self, max_results=6, **kwargs):
+    def __init__(self, max_results: int = 10, rate_limit: float | None = 1.0, **kwargs):
         super().__init__()
         self.max_results = max_results
-        # 从环境变量获取API密钥
-        self.api_key = os.getenv("SERPAPI_API_KEY")  
-        if not self.api_key:
-            raise ValueError("SERPAPI_API_KEY environment variable not set!")
-
-    def _call_serpapi(self, query: str) -> List[Dict]:
-        """向SerpAPI的DuckDuckGo搜索端点发起请求"""
-        params = {
-            "q": query,
-            "engine": "duckduckgo",
-            "api_key": self.api_key,
-            "kl": "us-en",  # 语言/区域设置
-        }
-        response = requests.get("https://serpapi.com/search", params=params)
-        response.raise_for_status()  # 如果请求失败则抛出错误
-        data = response.json()
-        return data.get("organic_results", [])
+        self.rate_limit = rate_limit
+        self._min_interval = 1.0 / rate_limit if rate_limit else 0.0
+        self._last_request_time = 0.0
+        try:
+            from ddgs import DDGS
+        except ImportError as e:
+            raise ImportError(
+                "You must install package `ddgs` to run this tool: for instance run `pip install ddgs`."
+            ) from e
+        self.ddgs = DDGS(**kwargs)
 
     def forward(self, query: str) -> str:
-        try:
-            results = self._call_serpapi(query)[:self.max_results]
-            if not results:
-                raise Exception("No results found! Try a less restrictive/shorter query.")
-            
-            postprocessed_results = [
-                f"[{result['title']}]({result['link']})\n{result['snippet']}"
-                for result in results
-            ]
-            return "## Search Results\n\n" + "\n\n".join(postprocessed_results)
-        
-        except Exception as e:
-            return f"Error performing search: {str(e)}"
+        self._enforce_rate_limit()
+        results = self.ddgs.text(query, max_results=self.max_results)
+        if len(results) == 0:
+            raise Exception("No results found! Try a less restrictive/shorter query.")
+        postprocessed_results = [f"[{result['title']}]({result['href']})\n{result['body']}" for result in results]
+        return "## Search Results\n\n" + "\n\n".join(postprocessed_results)
+
+    def _enforce_rate_limit(self) -> None:
+        import time
+
+        # No rate limit enforced
+        if not self.rate_limit:
+            return
+
+        now = time.time()
+        elapsed = now - self._last_request_time
+        if elapsed < self._min_interval:
+            time.sleep(self._min_interval - elapsed)
+        self._last_request_time = time.time()
 
 
 class WebSearchTool(Tool):

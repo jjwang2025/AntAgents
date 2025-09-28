@@ -760,7 +760,7 @@ class OpenAIServerModel(ApiModel):
             estimated_output_tokens=estimated_output_tokens,
             **kwargs,
         )
-        # print(json.dumps(completion_kwargs, indent=2, ensure_ascii=False))
+        # print("***** Debug [IN] *****\n", json.dumps(completion_kwargs, indent=2, ensure_ascii=False))
         for msg in completion_kwargs.get('messages', []):
             if isinstance(msg.get('content'), list) and len(msg['content']) > 0:
                 first_content = msg['content'][0]
@@ -768,7 +768,8 @@ class OpenAIServerModel(ApiModel):
                     msg['content'] = first_content['text']
         self._apply_rate_limit()
         response = self.client.chat.completions.create(**completion_kwargs)
-
+        # print("***** Debug [OUT] *****\n", response)
+        
         # 据报道，使用OpenRouter时，`response.usage`在某些情况下可能为None：参见GH-1401
         self._last_input_token_count = getattr(response.usage, "prompt_tokens", 0)
         self._last_output_token_count = getattr(response.usage, "completion_tokens", 0)
@@ -968,10 +969,12 @@ class GeminiServerModel(ApiModel):
         self._apply_rate_limit()
         
         # 调用API生成内容
+        # print("***** Debug [IN] *****\n", gemini_messages)
         response = model.generate_content(
             contents=gemini_messages,
             generation_config=generation_config,
         )
+        # print("***** Debug [OUT] *****\n", response)
         # 构造返回消息（将model角色转换回assistant）
         return ChatMessage(
             role="assistant",  # 统一转换为assistant角色
