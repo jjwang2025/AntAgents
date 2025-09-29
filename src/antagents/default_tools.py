@@ -9,6 +9,11 @@ from typing import Dict, List
 from dataclasses import dataclass
 from typing import Any
 
+from .utils import BASE_BUILTIN_MODULES
+from .local_python_executor import (
+    BASE_PYTHON_TOOLS,
+    evaluate_python_code,
+)
 from .tools import Tool
 
 @dataclass  
@@ -19,6 +24,48 @@ class PreTool:
     task: str
     description: str
     repo_id: str
+
+
+class PythonInterpreterTool(Tool):
+    name = "python_interpreter"
+    description = "This is a tool that evaluates python code. It can be used to perform calculations."
+    inputs = {
+        "code": {
+            "type": "string",
+            "description": "The python code to run in interpreter",
+        }
+    }
+    output_type = "string"
+
+    def __init__(self, *args, authorized_imports=None, **kwargs):
+        if authorized_imports is None:
+            self.authorized_imports = list(set(BASE_BUILTIN_MODULES))
+        else:
+            self.authorized_imports = list(set(BASE_BUILTIN_MODULES) | set(authorized_imports))
+        self.inputs = {
+            "code": {
+                "type": "string",
+                "description": (
+                    "The code snippet to evaluate. All variables used in this snippet must be defined in this same snippet, "
+                    f"else you will get an error. This code can only import the following python libraries: {self.authorized_imports}."
+                ),
+            }
+        }
+        self.base_python_tools = BASE_PYTHON_TOOLS
+        self.python_evaluator = evaluate_python_code
+        super().__init__(*args, **kwargs)
+
+    def forward(self, code: str) -> str:
+        state = {}
+        output = str(
+            self.python_evaluator(
+                code,
+                state=state,
+                static_tools=self.base_python_tools,
+                authorized_imports=self.authorized_imports,
+            )[0]  # The second element is boolean is_final_answer
+        )
+        return f"Stdout:\n{str(state['_print_outputs'])}\nOutput: {output}"
 
 
 class FinalAnswerTool(Tool):
@@ -465,4 +512,5 @@ __all__ = [
     "GoogleSearchTool",
     "VisitWebpageTool",
     "WikipediaSearchTool",
+    "PythonInterpreterTool",
 ]

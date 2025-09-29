@@ -15,6 +15,7 @@ from .tools import *
 from .utils import *
 from .cli import *
 from .mcp_adapter import *
+from .local_python_executor import *
 from .scripts.text_inspector_tool import *
 from .scripts.visual_qa import *
 from .scripts.run_agents import *
