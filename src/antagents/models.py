@@ -768,17 +768,25 @@ class OpenAIServerModel(ApiModel):
                     msg['content'] = first_content['text']
         self._apply_rate_limit()
         response = self.client.chat.completions.create(**completion_kwargs)
-        # print("***** Debug [OUT] *****\n", response)
+        # print("***** Debug [OUT] *****\n", response, "\n*****")
         
         # 据报道，使用OpenRouter时，`response.usage`在某些情况下可能为None：参见GH-1401
-        self._last_input_token_count = getattr(response.usage, "prompt_tokens", 0)
-        self._last_output_token_count = getattr(response.usage, "completion_tokens", 0)
+        try:
+            self._last_input_token_count = response.usage.prompt_tokens if response.usage.prompt_tokens else 0
+        except AttributeError:
+            self._last_input_token_count = 0
+        
+        try:
+            self._last_output_token_count = response.usage.completion_tokens if response.usage.completion_tokens else 0
+        except AttributeError:
+            self._last_output_token_count = 0
+
         return ChatMessage.from_dict(
             response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
             raw=response,
             token_usage=TokenUsage(
-                input_tokens=response.usage.prompt_tokens,
-                output_tokens=response.usage.completion_tokens,
+                input_tokens=self._last_input_token_count,
+                output_tokens=self._last_output_token_count,
             ),
         )
 

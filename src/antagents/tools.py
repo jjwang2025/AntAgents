@@ -20,6 +20,9 @@ from functools import wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from rich.text import Text
+from .monitoring import LogLevel
+    
 from ._function_type_hints_utils import (
     TypeHintParsingException,
     _convert_type_hints_to_json_schema,
@@ -646,7 +649,9 @@ def validate_tool_arguments(tool: Tool, arguments: Any) -> None:
         for key, schema in tool.inputs.items():
             key_is_nullable = schema.get("nullable", False)
             if key not in arguments and not key_is_nullable:
-                raise ValueError(f"Argument {key} is required")
+                # Do not raise exception here
+                # raise ValueError(f"Argument {key} is required")
+                logger.debug(f"Argument {key} is missed")
         return None
     else:
         expected_type = list(tool.inputs.values())[0]["type"]

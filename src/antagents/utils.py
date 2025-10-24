@@ -49,6 +49,8 @@ BASE_BUILTIN_MODULES = [
     "statistics",
     "time",
     "unicodedata",
+    "pd",
+    "openpyxl",
 ]
 
 
