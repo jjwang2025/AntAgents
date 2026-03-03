@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import re
 import uuid
 import warnings
@@ -8,12 +7,11 @@ from collections.abc import Generator
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from enum import Enum
-from threading import Thread
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .monitoring import TokenUsage
 from .tools import Tool
-from .utils import RateLimiter, _is_package_available, encode_image_base64, make_image_url, parse_json_blob
+from .utils import RateLimiter, encode_image_base64, make_image_url, parse_json_blob
 
 
 logger = logging.getLogger(__name__)
@@ -23,10 +21,10 @@ logger = logging.getLogger(__name__)
 def estimate_tokens_from_messages(messages: list[dict]) -> int:
     """
     估算消息列表的大致token数量
-    
+
     Args:
         messages: 消息列表，每个消息是包含role和content的字典
-        
+
     Returns:
         int: 估算的token数量
     """
@@ -50,10 +48,10 @@ def estimate_tokens_from_messages(messages: list[dict]) -> int:
                     content_tokens += english_chars // 4 + chinese_chars // 2
         else:
             content_tokens = 100  # 默认值
-            
+
         # 角色和格式开销（约10个token）
         total_tokens += content_tokens + 10
-        
+
     return total_tokens
 
 
@@ -258,7 +256,7 @@ def get_tool_json_schema(tool: Tool) -> dict:
 
 def remove_stop_sequences(content: str, stop_sequences: list[str]) -> str:
     for stop_seq in stop_sequences:
-        if content[-len(stop_seq) :] == stop_seq:
+        if content[-len(stop_seq):] == stop_seq:
             content = content[: -len(stop_seq)]
     return content
 
@@ -337,7 +335,8 @@ def get_tool_call_from_text(text: str, tool_name_key: str, tool_arguments_key: s
         tool_name = tool_call_dictionary[tool_name_key]
     except Exception as e:
         raise ValueError(
-            f"Key {tool_name_key=} not found in the generated tool call. Got keys: {list(tool_call_dictionary.keys())} instead"
+            f"Key {tool_name_key=} not found in the generated tool call. Got keys: "
+            f"{list(tool_call_dictionary.keys())} instead"
         ) from e
     tool_arguments = tool_call_dictionary.get(tool_arguments_key, None)
     if isinstance(tool_arguments, str):
@@ -407,20 +406,20 @@ class Model:
     def _check_token_limit(self, messages: list[dict], estimated_output_tokens: int = 0) -> None:
         """
         检查估算的token数量是否超过限制
-        
+
         Args:
             messages: 清理后的消息列表
             estimated_output_tokens: 预估的输出token数量
-            
+
         Raises:
             ValueError: 如果估算的token数量超过限制
         """
         # 估算输入token数量
         estimated_input_tokens = estimate_tokens_from_messages(messages)
-        
+
         # 估算总token数量（输入+输出）
         total_estimated_tokens = estimated_input_tokens + estimated_output_tokens
-        
+
         # 检查是否超过限制
         if total_estimated_tokens > self.max_token_limit:
             raise ValueError(
@@ -428,9 +427,9 @@ class Model:
                 f"of {self.max_token_limit}. Input tokens: {estimated_input_tokens}, "
                 f"Estimated output tokens: {estimated_output_tokens}"
             )
-        
+
         logger.info(f"Estimated tokens: input={estimated_input_tokens}, "
-                   f"output={estimated_output_tokens}, total={total_estimated_tokens}")
+                    f"output={estimated_output_tokens}, total={total_estimated_tokens}")
 
     def _prepare_completion_kwargs(
         self,
@@ -460,10 +459,10 @@ class Model:
             convert_images_to_image_urls=convert_images_to_image_urls,
             flatten_messages_as_text=flatten_messages_as_text,
         )
-        
+
         # 检查token限制
         self._check_token_limit(messages_as_dicts, estimated_output_tokens)
-        
+
         # 使用self.kwargs作为基础配置
         completion_kwargs = {
             **self.kwargs,
@@ -564,7 +563,8 @@ class Model:
         for attribute_name in dangerous_attributes:
             if hasattr(self, attribute_name):
                 print(
-                    f"For security reasons, we do not export the `{attribute_name}` attribute of your model. Please export it manually."
+                    f"For security reasons, we do not export the `{attribute_name}` "
+                    "attribute of your model. Please export it manually."
                 )
         return model_dictionary
 
@@ -685,7 +685,7 @@ class OpenAIServerModel(ApiModel):
     ) -> Generator[ChatMessageStreamDelta]:
         # 估算输出token数（基于max_tokens参数）
         estimated_output_tokens = kwargs.get('max_tokens', 1000)
-        
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -748,7 +748,7 @@ class OpenAIServerModel(ApiModel):
     ) -> ChatMessage:
         # 估算输出token数（基于max_tokens参数）
         estimated_output_tokens = kwargs.get('max_tokens', 1000)
-        
+
         completion_kwargs = self._prepare_completion_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
@@ -769,13 +769,13 @@ class OpenAIServerModel(ApiModel):
         self._apply_rate_limit()
         response = self.client.chat.completions.create(**completion_kwargs)
         # print("***** Debug [OUT] *****\n", response, "\n*****")
-        
+
         # 据报道，使用OpenRouter时，`response.usage`在某些情况下可能为None：参见GH-1401
         try:
             self._last_input_token_count = response.usage.prompt_tokens if response.usage.prompt_tokens else 0
         except AttributeError:
             self._last_input_token_count = 0
-        
+
         try:
             self._last_output_token_count = response.usage.completion_tokens if response.usage.completion_tokens else 0
         except AttributeError:
@@ -793,16 +793,16 @@ class OpenAIServerModel(ApiModel):
 
 class GeminiServerModel(ApiModel):
     """Gemini API服务模型封装类
-    
+
     提供与Google Gemini API的交互能力，支持文本和多模态内容生成
-    
+
     特性：
     - 支持流式和非流式生成
     - 自动处理角色转换（将标准ChatML角色转换为Gemini支持的角色）
     - 支持多模态输入（文本+图像）
     - 内置速率限制
     - 支持工具调用转换
-    
+
     典型用法：
         >>> model = GeminiServerModel(
         ...     model_id="gemini-pro",
@@ -823,7 +823,7 @@ class GeminiServerModel(ApiModel):
         **kwargs,
     ):
         """初始化Gemini模型实例
-        
+
         Args:
             model_id: 模型标识符（如"gemini-pro"）
             api_base: API基础URL（可选，默认为官方端点）
@@ -836,25 +836,25 @@ class GeminiServerModel(ApiModel):
         """
         # 客户端配置（包含认证和连接参数）
         self.client_kwargs = {
-            **(client_kwargs or {}),  # 用户自定义参数
-            "api_key": api_key,  # API认证密钥
-            "transport": "rest",  # 使用REST传输协议
+            **(client_kwargs or {}),    # 用户自定义参数
+            "api_key": api_key,         # API认证密钥
+            "transport": "rest",        # 使用REST传输协议
             "client_options": {"api_endpoint": api_base} if api_base else None,  # 自定义API端点
         }
-        
+
         # 设置Google Cloud项目（如果提供）
         if project:
             self.client_kwargs["project"] = project
 
         # 默认角色转换规则（将各种ChatML角色映射为Gemini支持的两种角色）
         default_role_conversions = {
-            "system": "user",    # 系统提示 -> 用户角色
-            "assistant": "model",  # 助手回复 -> 模型角色
-            "tool": "user",      # 工具响应 -> 用户角色
-            "tool-call": "model", # 工具调用 -> 模型角色
+            "system": "user",       # 系统提示 -> 用户角色
+            "assistant": "model",   # 助手回复 -> 模型角色
+            "tool": "user",         # 工具响应 -> 用户角色
+            "tool-call": "model",   # 工具调用 -> 模型角色
             "tool-response": "user",
         }
-        
+
         # 合并用户自定义的角色转换规则
         if custom_role_conversions:
             default_role_conversions.update(custom_role_conversions)
@@ -869,10 +869,10 @@ class GeminiServerModel(ApiModel):
 
     def create_client(self) -> Any:
         """创建并配置Gemini客户端
-        
+
         Returns:
             google.generativeai模块实例
-            
+
         Raises:
             ModuleNotFoundError: 未安装google-generativeai包时抛出
         """
@@ -889,15 +889,15 @@ class GeminiServerModel(ApiModel):
 
     def _convert_messages_to_gemini_format(self, messages: list[ChatMessage | dict]) -> list[dict]:
         """将标准聊天消息转换为Gemini API要求的格式
-        
+
         Gemini API要求：
         - 只接受user和model两种角色
         - 内容必须放在parts数组中
         - 支持多模态内容（文本/图像）
-        
+
         Args:
             messages: 原始消息列表（ChatMessage对象或字典）
-            
+
         Returns:
             转换后的消息列表，符合Gemini API格式要求
         """
@@ -906,17 +906,17 @@ class GeminiServerModel(ApiModel):
             # 统一转换为字典格式
             if isinstance(msg, ChatMessage):
                 msg = msg.dict()  # 使用ChatMessage的dict方法
-            
+
             # 应用角色转换（确保最终只有user或model两种角色）
             original_role = msg["role"]
             role = self.custom_role_conversions.get(original_role, "user")
             if role not in ["user", "model"]:
                 role = "user"  # 安全回退
-            
+
             # 处理消息内容（支持多模态）
             content = msg["content"]
             parts = []
-            
+
             if isinstance(content, list):
                 # 多模态内容处理（文本+图像）
                 for part in content:
@@ -931,13 +931,13 @@ class GeminiServerModel(ApiModel):
             else:
                 # 纯文本内容
                 parts = [{"text": str(content)}]
-            
+
             # 构建符合Gemini格式的消息
             converted.append({
                 "role": role,
                 "parts": parts  # Gemini使用parts数组存放内容
             })
-        
+
         return converted
 
     def generate(
@@ -949,33 +949,33 @@ class GeminiServerModel(ApiModel):
         **kwargs,
     ) -> ChatMessage:
         """非流式消息生成
-        
+
         Args:
             messages: 聊天消息历史
             stop_sequences: 停止生成序列
             response_format: 响应格式要求
             tools_to_call_from: 可用工具列表
             **kwargs: 其他生成参数
-            
+
         Returns:
             ChatMessage: 包含模型响应的消息对象
         """
         # 获取模型实例
         model = self.client.GenerativeModel(self.model_id)
-        
+
         # 转换消息格式
         gemini_messages = self._convert_messages_to_gemini_format(messages)
-        
+
         # 构建生成配置
         generation_config = {
             "stop_sequences": stop_sequences or [],  # 确保不为None
             **(response_format or {}),  # 响应格式
             **kwargs,  # 其他参数（如temperature等）
         }
-        
+
         # 应用速率限制
         self._apply_rate_limit()
-        
+
         # 调用API生成内容
         # print("***** Debug [IN] *****\n", gemini_messages)
         response = model.generate_content(
@@ -1003,31 +1003,31 @@ class GeminiServerModel(ApiModel):
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta, None, None]:
         """流式消息生成
-        
+
         Args:
             参数同generate方法
-            
+
         Yields:
             ChatMessageStreamDelta: 流式响应增量
         """
         model = self.client.GenerativeModel(self.model_id)
         gemini_messages = self._convert_messages_to_gemini_format(messages)
-        
+
         generation_config = {
             "stop_sequences": stop_sequences or [],
             **(response_format or {}),
             **kwargs,
         }
-        
+
         self._apply_rate_limit()
-        
+
         # 流式调用
         response = model.generate_content(
             contents=gemini_messages,
             stream=True,  # 启用流式
             generation_config=generation_config,
         )
-        
+
         # 逐块返回响应
         for chunk in response:
             yield ChatMessageStreamDelta(

@@ -4,10 +4,11 @@
 import json
 import os
 import requests
+import time
+import xml.etree.ElementTree as ET
 
-from typing import Dict, List
+from typing import List, Any, Optional
 from dataclasses import dataclass
-from typing import Any
 
 from .utils import BASE_BUILTIN_MODULES
 from .local_python_executor import (
@@ -16,7 +17,8 @@ from .local_python_executor import (
 )
 from .tools import Tool
 
-@dataclass  
+
+@dataclass
 class PreTool:
     name: str
     inputs: dict[str, str]
@@ -46,8 +48,9 @@ class PythonInterpreterTool(Tool):
             "code": {
                 "type": "string",
                 "description": (
-                    "The code snippet to evaluate. All variables used in this snippet must be defined in this same snippet, "
-                    f"else you will get an error. This code can only import the following python libraries: {self.authorized_imports}."
+                    f"The code snippet to evaluate. All variables used in this snippet must be defined "
+                    f"in this same snippet, else you will get an error. This code can only import the following "
+                    f"python libraries: {self.authorized_imports}."
                 ),
             }
         }
@@ -106,9 +109,17 @@ class DuckDuckGoSearchTool(Tool):
         ```
     """
 
-    name = "web_search"
-    description = """Performs a duckduckgo web search based on your query (think a Google search) then returns the top search results."""
-    inputs = {"query": {"type": "string", "description": "The search query to perform."}}
+    name = "duckduckgo_search"
+    description = (
+        "Performs a duckduckgo web search based on your query (think a Google search) "
+        "then returns the top search results."
+    )
+    inputs = {
+        "query": {
+            "type": "string",
+            "description": "The search query to perform."
+        }
+    }
     output_type = "string"
 
     def __init__(self, max_results: int = 10, rate_limit: float | None = 1.0, **kwargs):
@@ -149,8 +160,17 @@ class DuckDuckGoSearchTool(Tool):
 
 class WebSearchTool(Tool):
     name = "web_search"
-    description = "Performs a web search for a query and returns a string of the top search results formatted as markdown with titles, links, and descriptions."
-    inputs = {"query": {"type": "string", "description": "The search query to perform. If the original input includes an abbreviation, do not expand it into the full name."}}
+    description = (
+        "Performs a web search for a query and returns a string of the top search results formatted "
+        "as markdown with titles, links, and descriptions."
+    )
+    inputs = {
+        "query": {
+            "type": "string",
+            "description": "The search query to perform. If the original input includes an abbreviation, do not "
+                           "expand it into the full name."
+        }
+    }
     output_type = "string"
 
     def __init__(self, max_results=6):
@@ -173,7 +193,7 @@ class WebSearchTool(Tool):
         # 从JSON结构中逐层提取webPages.value数组
         web_pages = response_json.get('data', {}).get('webPages', {})
         value_list = web_pages.get('value', [])
-        
+
         for item in value_list:
             # 构建包含title、link、description的字典
             result_item = {
@@ -181,7 +201,7 @@ class WebSearchTool(Tool):
                 'link': item.get('url', '').strip(),    # 链接对应url字段
                 'description': item.get('summary', '').strip()  # 描述对应summary字段
             }
-            results.append(result_item)        
+            results.append(result_item)
         return results
 
     def search_bochaai(self, query: str) -> list:
@@ -196,9 +216,9 @@ class WebSearchTool(Tool):
                 "count": 6}
 
         response = requests.post(url, headers=headers, data=json.dumps(data))
-        response.raise_for_status() # 检查请求是否成功
+        response.raise_for_status()     # 检查请求是否成功
         return self.parse_bochaai_results(response.json())
-    
+
     def _create_bochaai_parser(self):
         from html.parser import HTMLParser
 
@@ -269,7 +289,7 @@ class VisitWebpageTool(Tool):
         return (
             content[: max_length // 2]
             + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
-            + content[-max_length // 2 :]
+            + content[-max_length // 2:]
         )
 
     def forward(self, url: str) -> str:
@@ -281,7 +301,8 @@ class VisitWebpageTool(Tool):
             from requests.exceptions import RequestException
         except ImportError as e:
             raise ImportError(
-                "You must install packages `markdownify` and `requests` to run this tool: for instance run `pip install markdownify requests`."
+                "You must install packages `markdownify` and `requests` to run this tool: "
+                "for instance run `pip install markdownify requests`."
             ) from e
         try:
             # 发送GET请求到URL，设置20秒超时
@@ -313,7 +334,8 @@ class WikipediaSearchTool(Tool):
     WikipediaSearchTool搜索维基百科并返回给定主题的摘要或全文，以及页面URL。
 
     属性:
-        user_agent (str): 用于标识项目的自定义用户智能体字符串。根据维基百科API政策，这是必需的，详情请参阅：http://github.com/martin-majlis/Wikipedia-API/blob/master/README.rst
+        user_agent (str): 用于标识项目的自定义用户智能体字符串。根据维基百科API政策，这是必需的，
+                详情请参阅：http://github.com/martin-majlis/Wikipedia-API/blob/master/README.rst
         language (str): 检索维基百科文章的语言。
                 http://meta.wikimedia.org/wiki/List_of_Wikipedias
         content_type (str): 定义要获取的内容。可以是"summary"获取简短摘要，或"text"获取完整文章。
@@ -345,7 +367,8 @@ class WikipediaSearchTool(Tool):
     inputs = {
         "query": {
             "type": "string",
-            "description": "The topic to search on Wikipedia. If the original input includes an abbreviation, do not expand it into the full name.",
+            "description": "The topic to search on Wikipedia. If the original input includes an abbreviation, "
+                           "do not expand it into the full name.",
         }
     }
     output_type = "string"
@@ -411,14 +434,20 @@ class WikipediaSearchTool(Tool):
 
 class GoogleSearchTool(Tool):
     name = "google_search"
-    description = """Performs a google web search for your query then returns a string of the top search results."""
+    description = "Performs a google web search for your query then returns a string of the top search results."
     inputs = {
-        "query": {"type": "string", "description": "The search query to perform. If the original input includes an abbreviation, do not expand it into the full name."},
+        "query": {
+            "type": "string",
+            "description": (
+                "The search query to perform. "
+                "If the original input includes an abbreviation, do not expand it into the full name."
+            )
+        },
         "filter_year": {
             "type": "integer",
             "description": "Optionally restrict results to a certain year",
-            "nullable": True,
-        },
+            "nullable": True
+        }
     }
     output_type = "string"
 
@@ -467,13 +496,17 @@ class GoogleSearchTool(Tool):
         if self.organic_key not in results.keys():
             if filter_year is not None:
                 raise Exception(
-                    f"No results found for query: '{query}' with filtering on year={filter_year}. Use a less restrictive query or do not filter on year."
+                    f"No results found for query: '{query}' with filtering on year={filter_year}. "
+                    f"Use a less restrictive query or do not filter on year."
                 )
             else:
                 raise Exception(f"No results found for query: '{query}'. Use a less restrictive query.")
         if len(results[self.organic_key]) == 0:
             year_filter_message = f" with filter year={filter_year}" if filter_year is not None else ""
-            return f"No results found for '{query}'{year_filter_message}. Try with a more general query, or remove the year filter."
+            return (
+                f"No results found for '{query}'{year_filter_message}. Try with a more general query, "
+                f"or remove the year filter."
+            )
 
         web_snippets = []
         if self.organic_key in results:
@@ -495,22 +528,633 @@ class GoogleSearchTool(Tool):
 
         return "## Search Results\n" + "\n\n".join(web_snippets)
 
+
+class ArXivSearchTool(Tool):
+    name = "arxiv_search"
+    description = (
+        "Primary arXiv paper search tool. "
+        "ALWAYS use this tool to find relevant arXiv academic papers by keywords. "
+        "Searches title+abstract+full text (same as official website). "
+        "Supports precise filtering by submission year + month. "
+    )
+    inputs = {
+        "query": {
+            "type": "string",
+            "description": "Core search keywords (e.g., AI regulation, machine learning). "
+                           "Can be empty (auto-filled with category-related words).",
+            "nullable": True
+        },
+        "categories": {
+            "type": "string",
+            "description": "Comma-separated arXiv subject categories (e.g., cs.CY, physics.soc-ph).",
+            "nullable": True
+        },
+        "max_results": {
+            "type": "integer",
+            "description": "Maximum number of papers to return (default: 10, MUST greater than 1).",
+            "nullable": True
+        },
+        "submission_year": {
+            "type": "integer",
+            "description": "Filter papers by submission year (e.g., 2022, None if not given).",
+            "nullable": True
+        },
+        "submission_month": {
+            "type": "integer",
+            "description": "Filter papers by submission month (1-12, None if not given).",
+            "nullable": True
+        },
+        "submission_day": {
+            "type": "integer",
+            "description": "Filter papers by submission day (1-31, None if not given).",
+            "nullable": True
+        },
+    }
+    output_type = "string"
+
+    def __init__(
+            self,
+            max_results: int = 10,
+            sort_by: str = "submittedDate",
+            sort_order: str = "descending",
+            rate_limit: float = 0.33,
+            retry_times: int = 2
+    ):
+        super().__init__()
+        if max_results < 1 or max_results > 100:
+            raise ValueError("max_results must be between 1 and 100 (arXiv API limit)")
+        valid_sort_by = ["relevance", "lastUpdatedDate", "submittedDate"]
+        if sort_by not in valid_sort_by:
+            raise ValueError(f"sort_by must be one of: {valid_sort_by}")
+        valid_sort_order = ["ascending", "descending"]
+        if sort_order not in valid_sort_order:
+            raise ValueError(f"sort_order must be one of: {valid_sort_order}")
+
+        self.max_results = max_results
+        self.sort_by = sort_by
+        self.sort_order = sort_order
+        self.rate_limit = rate_limit
+        self.retry_times = retry_times
+        self._min_interval = 1.0 / rate_limit if rate_limit else 0.0
+        self._last_request_time = 0.0
+        self.base_url = "https://export.arxiv.org/api/query"
+        self.category_default_keywords = {
+            # 交叉学科/社会相关（仅保留核心通用词）
+            "physics.soc-ph": "social physics complex systems",
+            "cs.CY": "computers and society social computing",
+            # AI/ML 核心分类（仅保留领域基础词）
+            "cs.AI": "artificial intelligence",
+            "cs.LG": "machine learning",
+            "cs.CV": "computer vision",
+            "stat.ML": "statistical machine learning",
+            # 基础学科（仅保留学科核心名称）
+            "math": "mathematics",
+            "physics": "physics",
+            "chemistry": "chemistry",
+            "biology": "biology",
+            "engineering": "engineering"
+        }
+
+    def _enforce_rate_limit(self) -> None:
+        if not self.rate_limit:
+            return
+        now = time.time()
+        elapsed = now - self._last_request_time
+        if elapsed < self._min_interval:
+            time.sleep(self._min_interval - elapsed)
+        self._last_request_time = time.time()
+
+    def _parse_arxiv_response(self, xml_response: str) -> List[dict]:
+        """解析XML响应，提取核心字段（含精确年月）"""
+        try:
+            root = ET.fromstring(xml_response)
+        except Exception as e:
+            print(f"[ArXivSearchTool] XML parse error: {e}")
+            return []
+
+        papers = []
+        namespace = {'atom': 'http://www.w3.org/2005/Atom'}
+
+        try:
+            entries = root.findall('atom:entry', namespace)
+        except SyntaxError:
+            entries = root.findall('entry')
+
+        print("\n[ArXivSearchTool] ===== API Response =====")
+        print(f"[ArXivSearchTool] Total entries found: {len(entries)}")
+
+        if not entries:
+            print("[ArXivSearchTool] No entries found")
+            return []
+
+        for i, entry in enumerate(entries[:3], 1):
+            try:
+                title_elem = entry.find('atom:title', namespace)
+                if title_elem is None:
+                    title_elem = entry.find('title')
+                title = title_elem.text.strip() if title_elem is not None and title_elem.text else "No title"
+
+                published_elem = entry.find('atom:published', namespace)
+                if published_elem is None:
+                    published_elem = entry.find('published')
+                published = published_elem.text if published_elem is not None else "No date"
+
+                print(f"[ArXivSearchTool] Raw paper {i}:")
+                print(f"  Title: {title[:100]}..." if len(title) > 100 else f"  Title: {title}")
+                print(f"  Published: {published}")
+            except Exception as e:
+                print(f"[ArXivSearchTool] Raw paper {i}: Failed to parse - {e}")
+
+        for entry in entries:
+            try:
+                published_elem = entry.find('atom:published', namespace)
+                if published_elem is None:
+                    published_elem = entry.find('published')
+                if published_elem is None or not published_elem.text:
+                    continue
+
+                publish_time = published_elem.text
+                publish_parts = publish_time.split("T")[0].split("-")
+                publish_year = int(publish_parts[0]) if len(publish_parts) >= 1 else 0
+                publish_month = int(publish_parts[1]) if len(publish_parts) >= 2 else 0
+
+                title_elem = entry.find('atom:title', namespace)
+                if title_elem is None:
+                    title_elem = entry.find('title')
+                title = (
+                    title_elem.text.strip().replace("\n", " ")
+                    if title_elem is not None and title_elem.text
+                    else "No title"
+                )
+
+                summary_elem = entry.find('atom:summary', namespace)
+                if summary_elem is None:
+                    summary_elem = entry.find('summary')
+                abstract = (
+                    summary_elem.text.strip().replace("\n", " ")
+                    if summary_elem is not None and summary_elem.text
+                    else "No abstract"
+                )
+
+                id_elem = entry.find('atom:id', namespace)
+                if id_elem is None:
+                    id_elem = entry.find('id')
+                if id_elem is not None and id_elem.text:
+                    arxiv_id = id_elem.text.split("/")[-1]
+                    link = f"https://arxiv.org/pdf/{arxiv_id}"
+                else:
+                    arxiv_id = "Unknown"
+                    link = "https://arxiv.org/pdf/"
+
+                ''' 注释掉以避免覆盖上面的 pdf 地址
+                link_elem = entry.find('atom:link[@rel="alternate"]', namespace)
+                if link_elem is None:
+                    for elem in entry.findall('link'):
+                        if elem.get('rel') == 'alternate':
+                            link_elem = elem
+                            break
+                if link_elem is not None:
+                    link = link_elem.attrib.get("href", link)
+                '''
+
+                authors = []
+                author_elems = entry.findall('atom:author', namespace)
+                if not author_elems:
+                    author_elems = entry.findall('author')
+                for author in author_elems:
+                    name_elem = author.find('atom:name', namespace)
+                    if name_elem is None:
+                        name_elem = author.find('name')
+                    if name_elem is not None and name_elem.text:
+                        authors.append(name_elem.text.strip())
+
+                categories = []
+                cat_elems = entry.findall('atom:category', namespace)
+                if not cat_elems:
+                    cat_elems = entry.findall('category')
+                for cat in cat_elems:
+                    if "term" in cat.attrib:
+                        categories.append(cat.attrib["term"])
+
+                paper = {
+                    "title": title,
+                    "arxiv_id": arxiv_id,
+                    "link": link,
+                    "published": publish_time,
+                    "publish_year": publish_year,
+                    "publish_month": publish_month,
+                    "abstract": abstract,
+                    "authors": authors,
+                    "categories": categories
+                }
+                papers.append(paper)
+            except Exception as e:
+                print(f"[ArXivSearchTool] Failed to parse one paper: {e}")
+                continue
+
+        print(f"[ArXivSearchTool] Successfully parsed {len(papers)} papers")
+
+        if papers:
+            print("\n[ArXivSearchTool] ----- Parsed papers (first 3) -----")
+            for i, paper in enumerate(papers[:3], 1):
+                print(f"Paper {i}:")
+                print(
+                    f"  Title: {paper['title'][:100]}..."
+                    if len(paper['title']) > 100
+                    else f"  Title: {paper['title']}"
+                )
+                print(f"  Year: {paper['publish_year']}, Month: {paper['publish_month']:02d}")
+                print(f"  Categories: {', '.join(paper['categories'][:3])}")
+                print(f"  ID: {paper['arxiv_id']}")
+
+        return papers
+
+    def _get_default_keyword_for_category(self, categories: List[str]) -> str:
+        if not categories:
+            return "research"
+        for cat in categories:
+            cat_lower = cat.strip().lower()
+            if cat_lower in self.category_default_keywords:
+                return self.category_default_keywords[cat_lower]
+            cat_prefix = cat_lower.split(".")[0]
+            if cat_prefix in self.category_default_keywords:
+                return self.category_default_keywords[cat_prefix]
+        return "research"
+
+    def _build_search_query(self, query, categories,
+                            submission_year, submission_month, submission_day,
+                            with_figures=False):
+        search_parts = []
+
+        # 日期
+        if submission_year is not None:
+            y = submission_year
+            m = submission_month
+            d = submission_day
+
+            if m is not None and 1 <= m <= 12:
+                if d is not None and 1 <= d <= 31:
+                    start = f"{y:04d}{m:02d}{d:02d}"
+                    end = start
+                else:
+                    if m == 2:
+                        if (y % 4 == 0 and y % 100 != 0) or (y % 400 == 0):
+                            last = 29
+                        else:
+                            last = 28
+                    elif m in [4, 6, 9, 11]:
+                        last = 30
+                    else:
+                        last = 31
+                    start = f"{y:04d}{m:02d}01"
+                    end = f"{y:04d}{m:02d}{last}"
+            else:
+                start = f"{y:04d}0101"
+                end = f"{y:04d}1231"
+
+            start_date = f"{start}0000"
+            end_date = f"{end}2359"
+            search_parts.append(f"submittedDate:[{start_date} TO {end_date}]")
+
+        # 关键词
+        base_query = (query or "").strip()
+        if base_query:
+            base_query = " ".join(base_query.split())
+
+            if " " in base_query:
+                # 短语匹配
+                search_parts.append(f'all:"{base_query}"')
+            else:
+                search_parts.append(f"all:{base_query}")
+
+        # 分类
+        if categories:
+            cat_parts = [f"cat:{c.strip()}" for c in categories if c.strip()]
+            if cat_parts:
+                search_parts.append("(" + " OR ".join(cat_parts) + ")")
+
+        # 图表
+        if with_figures:
+            figure_query = '(all:"figure" OR all:"chart" OR all:"diagram" OR all:"visualization")'
+            search_parts.append(figure_query)
+
+        if search_parts:
+            # 关键：用 AND 连接
+            final_query = " AND ".join(search_parts)
+        else:
+            final_query = "all:*"
+
+        print("[ArXivSearchTool] Final query:", final_query)
+        return final_query
+
+    def _filter_papers_by_year_month(
+        self,
+        papers: List[dict],
+        target_year: Optional[int],
+        target_month: Optional[int]
+    ) -> List[dict]:
+        """后过滤：按年份+月份筛选（作为API过滤的补充）"""
+        if not papers:
+            return papers
+
+        if target_year is None:
+            return papers
+
+        filtered_by_year = [p for p in papers if p.get("publish_year") == target_year]
+
+        if target_month is not None and 1 <= target_month <= 12:
+            return [p for p in filtered_by_year if p.get("publish_month") == target_month]
+
+        return filtered_by_year
+
+    def _filter_papers_by_categories(self, papers: List[dict], target_cats: List[str]) -> List[dict]:
+        """后过滤：按分类筛选（作为API过滤的补充）"""
+        if not target_cats or not papers:
+            return papers
+
+        target_cats_lower = [c.strip().lower() for c in target_cats]
+        filtered = []
+
+        for paper in papers:
+            paper_cats_lower = [c.lower() for c in paper.get("categories", [])]
+            if any(tc in pc for tc in target_cats_lower for pc in paper_cats_lower):
+                filtered.append(paper)
+
+        return filtered
+
+    def _core_search(self, query: str, categories: List[str], max_results: int,
+                     submission_year: Optional[int], submission_month: Optional[int],
+                     submission_day: Optional[int], with_figures: bool) -> str:
+        print("\n[ArXivSearchTool] ===== Starting search =====")
+        print(f"[ArXivSearchTool] Query: '{query}'")
+        print(f"[ArXivSearchTool] Categories: {categories}")
+        print(f"[ArXivSearchTool] Year: {submission_year}, Month: {submission_month}, "
+              f"Day: {submission_day}")
+        print(f"[ArXivSearchTool] Max results: {max_results}")
+
+        # 构建查询
+        search_query = self._build_search_query(
+            query=query,
+            categories=categories,
+            submission_year=submission_year,
+            submission_month=submission_month,
+            submission_day=submission_day,
+            with_figures=with_figures
+        )
+
+        api_max_results = min(max_results * 3, 50)
+        print(f"[ArXivSearchTool] API max_results: {api_max_results}")
+
+        params = {
+            "search_query": search_query,
+            "start": 0,
+            "max_results": api_max_results,
+            "sortBy": self.sort_by,
+            "sortOrder": self.sort_order
+        }
+
+        for attempt in range(self.retry_times + 1):
+            try:
+                self._enforce_rate_limit()
+                print(f"\n[ArXivSearchTool] Attempt {attempt + 1}/{self.retry_times + 1}")
+                print(f"[ArXivSearchTool] Request URL: {self.base_url}")
+                print(f"[ArXivSearchTool] Request params: {params}")
+
+                response = requests.get(self.base_url, params=params, timeout=30)
+                print(f"[ArXivSearchTool] Response status: {response.status_code}")
+
+                if response.status_code == 400 or response.status_code == 500:
+                    print("[ArXivSearchTool] Bad request - trying without date filter")
+                    # 移除日期过滤重试
+                    fallback_parts = []
+
+                    # 关键词
+                    base_query = query.strip() or "research"
+                    if len(base_query.split()) == 1:
+                        fallback_parts.append(f"all:{base_query}")
+                    else:
+                        fallback_parts.append(f'all:"{base_query}"')
+
+                    # 分类
+                    if categories:
+                        cat_parts = [f"cat:{cat}" for cat in categories if cat.strip()]
+                        if cat_parts:
+                            cat_query = "(" + "+OR+".join(cat_parts) + ")"
+                            fallback_parts.append(cat_query)
+
+                    params_without_date = {
+                        "search_query": "+AND+".join(fallback_parts),
+                        "start": 0,
+                        "max_results": api_max_results,
+                        "sortBy": self.sort_by,
+                        "sortOrder": self.sort_order
+                    }
+                    response = requests.get(self.base_url, params=params_without_date, timeout=30)
+                    print(f"[ArXivSearchTool] Retry without date - Response status: {response.status_code}")
+
+                response.raise_for_status()
+
+                raw_papers = self._parse_arxiv_response(response.text)
+
+                if not raw_papers:
+                    print("[ArXivSearchTool] No papers found from API")
+                    if attempt == 0:
+                        print("[ArXivSearchTool] Trying fallback query without quotes...")
+                        fallback_query = query.strip() or "research"
+                        params["search_query"] = f"all:{fallback_query}"
+                        if categories:
+                            cat_query = "+OR+".join([f"cat:{cat}" for cat in categories if cat])
+                            params["search_query"] += f"+AND+({cat_query})"
+                        continue
+                    else:
+                        return f"No arXiv papers found for query: '{search_query}'"
+
+                # 后过滤
+                filtered_papers = self._filter_papers_by_year_month(raw_papers, submission_year, submission_month)
+                filtered_papers = self._filter_papers_by_categories(filtered_papers, categories)
+                filtered_papers = filtered_papers[:max_results]
+
+                print("\n[ArXivSearchTool] ===== Final Results =====")
+                print(f"[ArXivSearchTool] Papers after all filters: {len(filtered_papers)}")
+
+                if not filtered_papers:
+                    filter_desc = []
+                    if submission_year:
+                        filter_desc.append(f"year={submission_year}")
+                    if submission_month is not None and submission_year is not None:
+                        filter_desc.append(f"month={submission_month}")
+
+                    year_str = ", ".join(filter_desc) if filter_desc else "no year filter"
+                    cat_str = ", ".join(categories) if categories else "no category filter"
+
+                    return (f"No arXiv papers found after filtering.\n"
+                            f"Query: '{search_query}'\n"
+                            f"Filters: {year_str}, categories: {cat_str}\n"
+                            f"Total papers retrieved from API: {len(raw_papers)}")
+
+                formatted_results = ["## arXiv Search Results\n"]
+                for idx, paper in enumerate(filtered_papers, 1):
+                    authors_str = ", ".join(paper["authors"][:3])
+                    if len(paper["authors"]) > 3:
+                        authors_str += f" et al. ({len(paper['authors'])} authors total)"
+
+                    categories_str = ", ".join(paper["categories"][:3])
+                    if len(paper["categories"]) > 3:
+                        categories_str += f" and {len(paper['categories'])-3} more"
+
+                    publish_date = f"{paper['publish_year']}-{paper['publish_month']:02d}"
+
+                    abstract = paper['abstract'][:200] + "..." if len(paper['abstract']) > 200 else paper['abstract']
+
+                    paper_entry = (
+                        f"{idx}. **{paper['title']}**\n"
+                        f"   - Authors: {authors_str}\n"
+                        f"   - Categories: {categories_str}\n"
+                        f"   - Submitted: {publish_date}\n"
+                        f"   - Abstract: {abstract}\n"
+                        f"   - Link: [{paper['arxiv_id']}]({paper['link']})\n"
+                    )
+                    formatted_results.append(paper_entry)
+
+                print("[ArXivSearchTool] ===== Search completed =====\n")
+                return "\n".join(formatted_results)
+
+            except requests.exceptions.HTTPError as e:
+                print(f"[ArXivSearchTool] HTTP Error: {e}")
+                if attempt < self.retry_times:
+                    wait_time = 2 * (attempt + 1)
+                    print(f"[ArXivSearchTool] Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                    continue
+                return f"ArXiv API Error: {str(e)}"
+            except requests.exceptions.Timeout:
+                print("[ArXivSearchTool] Request timeout")
+                return "ArXiv API Request Timed Out. Please try again later."
+            except Exception as e:
+                print(f"[ArXivSearchTool] Unexpected error: {e}")
+                return f"Unexpected Error: {str(e)}"
+
+    def forward(
+            self,
+            query: str = "",
+            categories: Optional[str] = None,
+            max_results: Optional[int] = None,
+            submission_year: Optional[int] = None,
+            submission_month: Optional[int] = None,
+            submission_day: Optional[int] = None
+    ) -> str:
+        print("\n[ArXivSearchTool] ===== Tool called =====")
+        print(f"[ArXivSearchTool] Input query: '{query}'")
+        print(f"[ArXivSearchTool] Input categories: {categories}")
+        print(f"[ArXivSearchTool] Input year: {submission_year}, month: {submission_month}, "
+              f"day: {submission_day}")
+        print(f"[ArXivSearchTool] Input max_results: {max_results}")
+
+        results_count = max_results if max_results and 1 <= max_results <= 100 else self.max_results
+        target_cats = categories.split(",") if categories else []
+
+        print(f"[ArXivSearchTool] Using max_results: {results_count}")
+        print(f"[ArXivSearchTool] Using categories: {target_cats}")
+
+        return self._core_search(
+            query=query,
+            categories=target_cats,
+            max_results=results_count,
+            submission_year=submission_year,
+            submission_month=submission_month,
+            submission_day=submission_day,
+            with_figures=False
+        )
+
+
+class USGSNASFactSheetTool(Tool):
+    name = "usgs_nas_factsheet"
+    description = (
+        "Visits the USGS Nonindigenous Aquatic Species (NAS) FactSheet page by speciesID "
+        "and returns its content as a markdown string. Use this to get detailed species information from USGS NAS.\n"
+        "If you want to get knowledges from USGS NAS database, call this tool with corresponding species ID."
+    )
+    inputs = {
+        "species_id": {
+            "type": "integer",
+            "description": "The numeric speciesID of the organism in USGS NAS database (e.g., 3243).",
+        }
+    }
+    output_type = "string"
+
+    def __init__(self, max_output_length: int = 40000):
+        super().__init__()
+        self.max_output_length = max_output_length
+        # USGS NAS FactSheet基础URL（泛化拼接逻辑，无硬编码物种）
+        self.base_url = "https://nas.er.usgs.gov/queries/FactSheet.aspx?speciesID={}"
+
+    def _truncate_content(self, content: str, max_length: int) -> str:
+        """复用现有截断逻辑，不新增实现"""
+        if len(content) <= max_length:
+            return content
+        return (
+            content[: max_length // 2]
+            + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
+            + content[-max_length // 2:]
+        )
+
+    def forward(self, species_id: int) -> str:
+        try:
+            # 拼接泛化URL（无任何特定物种硬编码）
+            url = self.base_url.format(species_id)
+
+            # 复用现有requests逻辑，不新增import
+            response = requests.get(url, timeout=20)
+            response.raise_for_status()
+
+            # 编码处理（复用现有逻辑）
+            if response.encoding == 'ISO-8859-1':
+                response.encoding = response.apparent_encoding
+
+            # HTML转Markdown（复用现有依赖，不新增import）
+            from markdownify import markdownify
+            import re
+            markdown_content = markdownify(response.text).strip()
+
+            # 清理多余换行符
+            markdown_content = re.sub(r"\n{3,}", "\n\n", markdown_content)
+
+            # 截断并返回纯网页内容（无结构化解析、无特定物种处理）
+            return self._truncate_content(markdown_content, self.max_output_length)
+
+        except ImportError as e:
+            raise ImportError(
+                "You must install packages `markdownify` and `requests` to run this tool: "
+                "for instance run `pip install markdownify requests`."
+            ) from e
+        except requests.exceptions.Timeout:
+            return f"Request to USGS NAS FactSheet (speciesID: {species_id}) timed out after 20 seconds."
+        except requests.exceptions.RequestException as e:
+            return f"Error fetching USGS NAS FactSheet (speciesID: {species_id}): {str(e)}"
+        except Exception as e:
+            return f"Unexpected error accessing USGS NAS FactSheet (speciesID: {species_id}): {str(e)}"
+
+
 TOOL_MAPPING = {
     tool_class.name: tool_class
     for tool_class in [
         WebSearchTool,
         DuckDuckGoSearchTool,
-        GoogleSearchTool
+        GoogleSearchTool,
+        ArXivSearchTool,
+        USGSNASFactSheetTool,
     ]
 }
 
 __all__ = [
     "FinalAnswerTool",
     "UserInputTool",
-    "WebSearchTool", # 调用博査BochaAI接口
+    "WebSearchTool",    # 调用博査BochaAI接口
     "DuckDuckGoSearchTool",
     "GoogleSearchTool",
     "VisitWebpageTool",
     "WikipediaSearchTool",
     "PythonInterpreterTool",
+    "ArXivSearchTool",
+    "USGSNASFactSheetTool",
 ]

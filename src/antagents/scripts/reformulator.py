@@ -62,6 +62,7 @@ If you are unable to determine the final answer, output 'FINAL ANSWER: Unable to
         }
     )
 
+    print("> Reformulated nessages: ", messages)
     response = reformulation_model(messages).content
 
     final_answer = response.split("FINAL ANSWER: ")[-1].strip()

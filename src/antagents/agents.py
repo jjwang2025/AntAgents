@@ -2,25 +2,19 @@
 # coding=utf-8
 
 import importlib
-import json
-import os
 import re
-import tempfile
 import textwrap
 import time
 import warnings
 from datetime import datetime
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from logging import getLogger
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Type, TypeAlias, TypedDict, Union
 
 import yaml
 from jinja2 import StrictUndefined, Template
-from rich.console import Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -64,15 +58,12 @@ from .monitoring import (
 from .tools import BaseTool, Tool, validate_tool_arguments
 from .utils import (
     AgentError,
-    AgentExecutionError,
     AgentGenerationError,
     AgentMaxStepsError,
     AgentParsingError,
     AgentToolCallError,
     AgentToolExecutionError,
-    create_agent_gradio_app_template,
     is_valid_name,
-    make_init_file,
     truncate_content,
     decode_unicode_escapes,
 )
@@ -275,7 +266,8 @@ class MultiStepAgent(ABC):
                 if isinstance(value, dict):
                     for subkey in value.keys():
                         assert key in prompt_templates.keys() and (subkey in prompt_templates[key].keys()), (
-                            f"Some prompt templates are missing from your custom `prompt_templates`: {subkey} under {key}"
+                            f"Some prompt templates are missing from your custom `prompt_templates`: "
+                            f"{subkey} under {key}"
                         )
 
         self.max_steps = max_steps
@@ -339,7 +331,8 @@ class MultiStepAgent(ABC):
                     "task": {"type": "string", "description": "Long detailed description of the task."},
                     "additional_args": {
                         "type": "object",
-                        "description": "Dictionary of extra inputs to pass to the managed agent, e.g. images, dataframes, or any other contextual data it may need.",
+                        "description": "Dictionary of extra inputs to pass to the managed agent, e.g. images, "
+                                       "dataframes, or any other contextual data it may need.",
                     },
                 }
                 agent.output_type = "string"
@@ -429,7 +422,8 @@ You have been provided with these additional arguments, that you can access dire
 
         self.logger.log_task(
             content=self.task.strip(),
-            subtitle=f"{type(self.model).__name__} - {(self.model.model_id if hasattr(self.model, 'model_id') else '')}",
+            subtitle=f"{type(self.model).__name__} - "
+                     f"{(self.model.model_id if hasattr(self.model, 'model_id') else '')}",
             level=LogLevel.INFO,
             title=self.name if hasattr(self, "name") else None,
         )
@@ -467,10 +461,10 @@ You have been provided with these additional arguments, that you can access dire
                 token_usage = None
 
             # 即使达到最大步数，只要成功生成了最终答案，就认为是成功状态
-            if (self.memory.steps and 
-                hasattr(self.memory.steps[-1], "error") and 
-                self.memory.steps[-1].error is not None and
-                not isinstance(self.memory.steps[-1].error, AgentMaxStepsError)):
+            if (self.memory.steps and
+                    hasattr(self.memory.steps[-1], "error") and
+                    self.memory.steps[-1].error is not None and
+                    not isinstance(self.memory.steps[-1].error, AgentMaxStepsError)):
                 state = "error"
             else:
                 state = "success"  # 包括达到最大步数但成功生成最终答案的情况
@@ -489,14 +483,14 @@ You have been provided with these additional arguments, that you can access dire
 
     def _run_stream(
             self, task: str, max_steps: int, images: list["PIL.Image.Image"] | None = None
-        ) -> Generator[ActionStep | PlanningStep | FinalAnswerStep | ChatMessageStreamDelta]:
+            ) -> Generator[ActionStep | PlanningStep | FinalAnswerStep | ChatMessageStreamDelta]:
         """执行流式运行的智能体步骤
-        
+
         Args:
             task: 要执行的任务
             max_steps: 最大步数限制
             images: 可选的图像输入列表
-            
+
         Yields:
             生成器返回各步骤的执行结果
         """
@@ -538,7 +532,7 @@ You have been provided with these additional arguments, that you can access dire
                 for output in self._step_stream(action_step):
                     # 生成所有输出
                     yield output
-                    
+
                     if isinstance(output, ActionOutput) and output.is_final_answer:
                         final_answer = output.output
                         self.logger.log(
@@ -584,11 +578,11 @@ You have been provided with these additional arguments, that you can access dire
     def _handle_max_steps_reached(self, task: str, images: list["PIL.Image.Image"]) -> Any:
         """处理达到最大步数的情况 - 生成最终答案而不是抛出异常"""
         action_step_start_time = time.time()
-        
+
         # 生成最终答案
         final_answer_message = self.provide_final_answer(task, images)
         final_answer = final_answer_message.content
-        
+
         # 创建正常的内存步骤
         final_memory_step = ActionStep(
             step_number=self.step_number,
@@ -596,14 +590,14 @@ You have been provided with these additional arguments, that you can access dire
             token_usage=final_answer_message.token_usage,
         )
         final_memory_step.action_output = final_answer
-        
+
         # 记录信息但不作为错误
         self.logger.log(
-            Text(f"Reached max steps ({self.max_steps}), generating final answer based on current knowledge.", 
+            Text(f"Reached max steps ({self.max_steps}), generating final answer based on current knowledge.",
                  style=f"bold {YELLOW_HEX}"),
             level=LogLevel.INFO,
         )
-        
+
         self._finalize_step(final_memory_step)
         self.memory.steps.append(final_memory_step)
         return final_answer
@@ -631,7 +625,7 @@ You have been provided with these additional arguments, that you can access dire
             ]
             if self.stream_outputs and hasattr(self.model, "generate_stream"):
                 plan_message_content = ""
-                output_stream = self.model.generate_stream(input_messages, stop_sequences=["<end_plan>"])  # type: ignore
+                output_stream = self.model.generate_stream(input_messages, stop_sequences=["<end_plan>"])
                 input_tokens, output_tokens = 0, 0
                 with Live("", console=self.logger.console, vertical_overflow="visible") as live:
                     for event in output_stream:
@@ -657,7 +651,8 @@ You have been provided with these additional arguments, that you can access dire
                     else (None, None)
                 )
             plan = textwrap.dedent(
-                f"""Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n{plan_message_content}\n```"""
+                f"Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n"
+                f"{plan_message_content}\n```"
             )
         else:
             # 更新规划模式，移除系统提示和之前的规划消息
@@ -718,7 +713,9 @@ You have been provided with these additional arguments, that you can access dire
                         plan_message.token_usage.output_tokens,
                     )
             plan = textwrap.dedent(
-                f"""I still need to solve the task I was given:\n```\n{self.task}\n```\n\nHere are the facts I know and my new/updated plan of action to solve the task:\n```\n{plan_message_content}\n```"""
+                f"I still need to solve the task I was given:\n```\n{self.task}\n```\n\n"
+                f"Here are the facts I know and my new/updated plan of action to solve the task:\n```\n"
+                f"{plan_message_content}\n```"
             )
         log_headline = "Initial plan" if is_first_step else "Updated plan"
         self.logger.log(Rule(f"[bold]{log_headline}", style="orange"), Text(plan), level=LogLevel.INFO)
@@ -753,10 +750,10 @@ You have been provided with these additional arguments, that you can access dire
     ) -> list[ChatMessage]:
         """
         将记忆中的历史记录转换为消息列表
-        
+
         Args:
             summary_mode: 是否使用摘要模式
-            
+
         Returns:
             可用于LLM输入的消息列表
         """
@@ -770,7 +767,7 @@ You have been provided with these additional arguments, that you can access dire
     ) -> Generator[ChatMessageStreamDelta | ToolCall | ToolOutput | ActionOutput]:
         """
         执行ReAct框架中的一个步骤：智能体思考、行动并观察结果
-        
+
         Yields:
             生成器返回流式输出
         """
@@ -779,7 +776,7 @@ You have been provided with these additional arguments, that you can access dire
     def step(self, memory_step: ActionStep) -> Any:
         """
         执行ReAct框架中的一个步骤
-        
+
         Returns:
             返回步骤结果或最终答案
         """
@@ -788,11 +785,11 @@ You have been provided with these additional arguments, that you can access dire
     def extract_action(self, model_output: str, split_token: str) -> tuple[str, str]:
         """
         从LLM输出中解析动作
-        
+
         Args:
             model_output: LLM输出文本
             split_token: 动作分隔符
-            
+
         Returns:
             返回(推理, 动作)元组
         """
@@ -804,7 +801,8 @@ You have been provided with these additional arguments, that you can access dire
             )  # 从末尾开始索引可以处理输出中包含多个分隔符的情况
         except Exception:
             raise AgentParsingError(
-                f"No '{split_token}' token provided in your output.\nYour output:\n{model_output}\n. Be sure to include an action, prefaced with '{split_token}'!",
+                f"No '{split_token}' token provided in your output.\nYour output:\n{model_output}\n. "
+                f"Be sure to include an action, prefaced with '{split_token}'!",
                 self.logger,
             )
         return rationale.strip(), action.strip()
@@ -812,11 +810,11 @@ You have been provided with these additional arguments, that you can access dire
     def provide_final_answer(self, task: str, images: list["PIL.Image.Image"] | None = None) -> ChatMessage:
         """
         根据智能体交互记录提供最终答案
-        
+
         Args:
             task: 要执行的任务
             images: 可选的图像输入
-            
+
         Returns:
             返回包含最终答案的聊天消息
         """
@@ -862,7 +860,7 @@ You have been provided with these additional arguments, that you can access dire
 
     def replay(self, detailed: bool = False):
         """打印智能体步骤的回放
-        
+
         Args:
             detailed: 是否显示每一步的详细内存
         """
@@ -894,7 +892,7 @@ You have been provided with these additional arguments, that you can access dire
 class ToolCallingAgent(MultiStepAgent):
     """
     使用JSON式工具调用的智能体
-    
+
     Args:
         tools: 智能体可用的工具列表
         model: 生成智能体动作的模型
@@ -916,7 +914,9 @@ class ToolCallingAgent(MultiStepAgent):
         **kwargs,
     ):
         prompt_templates = prompt_templates or yaml.safe_load(
-            importlib.resources.files("antagents.prompts").joinpath("toolcalling_agent.yaml").read_text(encoding='utf-8')
+            importlib.resources.files("antagents.prompts")
+            .joinpath("toolcalling_agent.yaml")
+            .read_text(encoding='utf-8')
         )
         super().__init__(
             tools=tools,
@@ -1042,8 +1042,9 @@ class ToolCallingAgent(MultiStepAgent):
         parallel_calls: dict[str, ToolCall] = {}
         assert chat_message.tool_calls is not None
         for chat_tool_call in chat_message.tool_calls:
+            tool_call_id = chat_tool_call.id if chat_tool_call.id is not None else f"tool_call_{id(chat_tool_call)}"
             tool_call = ToolCall(
-                name=chat_tool_call.function.name, arguments=chat_tool_call.function.arguments, id=chat_tool_call.id
+                name=chat_tool_call.function.name, arguments=chat_tool_call.function.arguments, id=tool_call_id
             )
             yield tool_call
             parallel_calls[tool_call.id] = tool_call
@@ -1072,7 +1073,7 @@ class ToolCallingAgent(MultiStepAgent):
                 f"Observations: {observation.replace('[', '|')}",  # 转义可能的富文本标签
                 level=LogLevel.INFO,
             )
-            is_final_answer = tool_name == "final_answer"
+            is_final_answer = (tool_name == "final_answer")
 
             return ToolOutput(
                 id=tool_call.id,
@@ -1082,24 +1083,23 @@ class ToolCallingAgent(MultiStepAgent):
                 tool_call=tool_call,
             )
 
-        # 并行处理工具调用
+        # 无论调用数量多少，都统一串行处理，简化逻辑
+        # 这里串行执行的根本原因是 Agent 并行执行有问题，需要检查重入问题
         outputs = {}
-        if len(parallel_calls) == 1:
-            # 如果只有一个调用，直接处理
-            tool_call = list(parallel_calls.values())[0]
+        tool_call_count = len(parallel_calls)
+        self.logger.log(
+            f"Toolcalling: Total number is {tool_call_count}. "
+            f"If there are multiple calls, execute them one after another.",
+            level=LogLevel.INFO,
+        )
+        for tool_call in parallel_calls.values():
             tool_output = process_single_tool_call(tool_call)
             outputs[tool_output.id] = tool_output
+            self.logger.log(
+                f"Toolcalling: Get output for tool ID {tool_output.id}",
+                level=LogLevel.INFO,
+            )
             yield tool_output
-        else:
-            # 多个工具调用并行处理
-            with ThreadPoolExecutor(self.max_tool_threads) as executor:
-                futures = [
-                    executor.submit(process_single_tool_call, tool_call) for tool_call in parallel_calls.values()
-                ]
-                for future in as_completed(futures):
-                    tool_output = future.result()
-                    outputs[tool_output.id] = tool_output
-                    yield tool_output
 
         memory_step.tool_calls = [parallel_calls[k] for k in sorted(parallel_calls.keys())]
         memory_step.observations = memory_step.observations or ""
@@ -1121,7 +1121,7 @@ class ToolCallingAgent(MultiStepAgent):
     def execute_tool_call(self, tool_name: str, arguments: dict[str, str] | str) -> Any:
         """
         执行工具或托管智能体
-        
+
         Args:
             tool_name: 工具或托管智能体名称
             arguments: 调用参数
