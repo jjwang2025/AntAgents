@@ -43,9 +43,10 @@ def estimate_tokens_from_messages(messages: list[dict]) -> int:
             for item in content:
                 if isinstance(item, dict) and 'text' in item:
                     text = item['text']
-                    english_chars = len(re.findall(r'[a-zA-Z0-9\s\.,!?;:\'"\-]', text))
-                    chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
-                    content_tokens += english_chars // 4 + chinese_chars // 2
+                    if isinstance(text, str):
+                        english_chars = len(re.findall(r'[a-zA-Z0-9\s\.,!?;:\'"\-]', text))
+                        chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
+                        content_tokens += english_chars // 4 + chinese_chars // 2
         else:
             content_tokens = 100  # 默认值
 

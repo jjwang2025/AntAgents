@@ -253,18 +253,15 @@ class TextInspectorTool(Tool):
 
     inputs = {
         "file_path": {
-            "description": (
-                "The path to the file you want to read as text. Must be a '.something' file, like '.pdf'. "
-                "It can be a valid URL starting with http:// or https://. If it is an image, "
-                "use the visualizer tool instead!"
-            ),
+            "description": "The path to the file you want to read as text. Must be a '.something' file, "
+                           + "like '.pdf'. It can be a valid URL starting with http:// or https://. "
+                           + "If it is an image, use the visualizer tool instead!",
             "type": "string",
         },
         "question": {
-            "description": (
-                "[Optional]: Your question, as a natural language sentence. Provide as much context as possible. "
-                "Do not pass this parameter if you just want to directly return the content of the file."
-            ),
+            "description": "[Optional]: Your question, as a natural language sentence. "
+                           + "Provide as much context as possible. Do not pass this parameter "
+                           + "if you just want to directly return the content of the file.",
             "type": "string",
             "nullable": True,
         },
@@ -306,9 +303,9 @@ class TextInspectorTool(Tool):
                     {
                         "type": "text",
                         "text": "Here is a file:\n### "
-                        + str(result.title)
-                        + "\n\n"
-                        + result.text_content[: self.text_limit],
+                                + str(result.title)
+                                + "\n\n"
+                                + result.text_content[: self.text_limit],
                     }
                 ],
             },
@@ -317,12 +314,10 @@ class TextInspectorTool(Tool):
                 "content": [
                     {
                         "type": "text",
-                        "text": (
-                            "Now please write a short, 5 sentence caption for this document, "
-                            "that could help someone asking this question: "
-                            + question
-                            + "\n\nDon't answer the question yourself! Just provide useful notes on the document"
-                        ),
+                        "text": "Now please write a short, 5 sentence caption for this document, "
+                                + "that could help someone asking this question: "
+                                + question
+                                + "\n\nDon't answer the question yourself! Just provide useful notes on the document",
                     }
                 ],
             },
@@ -361,13 +356,12 @@ class TextInspectorTool(Tool):
                 "content": [
                     {
                         "type": "text",
-                        "text": (    # 标注来源类型
-                            "You will have to write a short caption for this web page, "
-                            "then answer this question:" + question
-                            if is_web_source
-                            else "You will have to write a short caption for this file, "
-                            "then answer this question:" + question,
-                        )
+                        "text": "You will have to write a short caption for this web page, "
+                                "then answer this question:" + question
+                                if is_web_source
+                                else
+                                "You will have to write a short caption for this file, "
+                                "then answer this question:" + question,
                     }
                 ],
             },
@@ -376,13 +370,12 @@ class TextInspectorTool(Tool):
                 "content": [
                     {
                         "type": "text",
-                        "text": (   # 显式标注是网页内容
-                            "Here is the complete web page:\n### " + str(result.title) + "\n\n"
-                            + result.text_content[: self.text_limit]
-                            if is_web_source
-                            else "Here is the complete file:\n### " + str(result.title) + "\n\n"
-                            + result.text_content[: self.text_limit]
-                        )
+                        "text": "Here is the complete web page:\n### " + str(result.title) + "\n\n"
+                                + result.text_content[: self.text_limit]
+                                if is_web_source
+                                else
+                                "Here is the complete file:\n### " + str(result.title) + "\n\n"
+                                + result.text_content[: self.text_limit],
                     }
                 ],
             },
@@ -391,11 +384,9 @@ class TextInspectorTool(Tool):
                 "content": [
                     {
                         "type": "text",
-                        "text": (
-                            "Now answer the question below. Use these three headings: '1. Short answer', "
-                            "'2. Extremely detailed answer', '3. Additional Context on the document and "
-                            "question asked'." + question
-                        ),
+                        "text": "Now answer the question below. Use these three headings: '1. Short answer', "
+                                "'2. Extremely detailed answer', '3. Additional Context on the document and "
+                                "question asked'." + question,
                     }
                 ],
             },
