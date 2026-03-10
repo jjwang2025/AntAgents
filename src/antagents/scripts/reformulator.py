@@ -52,7 +52,7 @@ Read the above conversation and output a FINAL ANSWER to the question. The quest
 To output the final answer, use the following template: FINAL ANSWER: [YOUR FINAL ANSWER]
 Your FINAL ANSWER should be a number OR as few words as possible OR a comma separated list of numbers and/or strings.
 ADDITIONALLY, your FINAL ANSWER MUST adhere to any formatting instructions specified in the original question (e.g., alphabetization, sequencing, units, rounding, decimal places, etc.)
-If you are asked for a number, express it numerically (i.e., with digits rather than words), don't use commas, and DO NOT INCLUDE UNITS such as $ or USD or percent signs unless specified otherwise.
+If you are asked for a number, express it numerically (i.e., with digits rather than words), use the correct unit and do NOT mix up units, don't use commas, and DO NOT INCLUDE UNITS such as $ or USD or percent signs unless specified otherwise.
 If you are asked for a string, don't use articles or abbreviations (e.g. for cities), unless specified otherwise. Don't output any final sentence punctuation such as '.', '!', or '?'.
 If you are asked for a comma separated list, apply the above rules depending on whether the elements are numbers or strings.
 If you are unable to determine the final answer, output 'FINAL ANSWER: Unable to determine'
@@ -62,12 +62,11 @@ If you are unable to determine the final answer, output 'FINAL ANSWER: Unable to
         }
     )
 
-    print("> Reformulated nessages: ", messages)
     response = reformulation_model(messages).content
 
     final_answer = response.split("FINAL ANSWER: ")[-1].strip()
-    print("> Reformulated answer: ", final_answer)
-
+    print("reformulator >>>", final_answer)
+    
     #     if "unable to determine" in final_answer.lower():
     #         messages.append({"role": MessageRole.ASSISTANT, "content": response })
     #         messages.append({"role": MessageRole.USER, "content": [{"type": "text", "text": """
