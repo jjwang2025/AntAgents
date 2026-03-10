@@ -1067,29 +1067,39 @@ class ArXivSearchTool(Tool):
         )
 
 
-class USGSNASFactSheetTool(Tool):
-    name = "usgs_nas_factsheet"
+class USGSNASSpeciesSearchTool(Tool):
+
+    name = "usgs_nas_species_search"
+
     description = (
-        "Visits the USGS Nonindigenous Aquatic Species (NAS) FactSheet page by speciesID "
-        "and returns its content as a markdown string. Use this to get detailed species information from USGS NAS.\n"
-        "If you want to get knowledges from USGS NAS database, call this tool with corresponding species ID."
+        "Search the USGS Nonindigenous Aquatic Species (NAS) database by "
+        "common name and return its content as a markdown string. "
+        "Use this to get detailed species information from USGS NAS. "
+        "If you want to get knowledges from USGS NAS database, call this tool with "
+        "corresponding scientific name. "
+        "Inputs ONLY use common name, DO NOT use scientific name. "
+        "If no results are returned, check whether the common name is incorrect. "
+        "DO NOT run USGSNASSpeciesSearchToolin parallel with other search tools."
     )
+
     inputs = {
-        "species_id": {
-            "type": "integer",
-            "description": "The numeric speciesID of the organism in USGS NAS database (e.g., 3243).",
+        "query": {
+            "type": "string",
+            "description": "Common name of the species.",
         }
     }
+
     output_type = "string"
 
     def __init__(self, max_output_length: int = 40000):
         super().__init__()
         self.max_output_length = max_output_length
-        # USGS NAS FactSheet基础URL（泛化拼接逻辑，无硬编码物种）
-        self.base_url = "https://nas.er.usgs.gov/queries/FactSheet.aspx?speciesID={}"
+        self.base_url_id = (
+            "https://nas.er.usgs.gov/queries/SpeciesList.aspx?group=&genus=&species=&comname={}&Sortby=1"
+        )
+        self.base_url_fact = "https://nas.er.usgs.gov/queries/FactSheet.aspx?speciesID={}"
 
     def _truncate_content(self, content: str, max_length: int) -> str:
-        """复用现有截断逻辑，不新增实现"""
         if len(content) <= max_length:
             return content
         return (
@@ -1098,23 +1108,50 @@ class USGSNASFactSheetTool(Tool):
             + content[-max_length // 2:]
         )
 
-    def forward(self, species_id: int) -> str:
+    def forward(self, query: str) -> str:
         try:
-            # 拼接泛化URL（无任何特定物种硬编码）
-            url = self.base_url.format(species_id)
+            import requests
+            import re
+            from urllib.parse import quote_plus
 
-            # 复用现有requests逻辑，不新增import
+            encoded_query = quote_plus(query)
+            url = self.base_url_id.format(encoded_query)
+
             response = requests.get(url, timeout=20)
             response.raise_for_status()
 
-            # 编码处理（复用现有逻辑）
             if response.encoding == 'ISO-8859-1':
                 response.encoding = response.apparent_encoding
 
-            # HTML转Markdown（复用现有依赖，不新增import）
-            from markdownify import markdownify
-            import re
-            markdown_content = markdownify(response.text).strip()
+            html = response.text
+
+            # 提取 speciesID + 物种名
+            matches = re.findall(
+                r"FactSheet\.aspx\?speciesID=(\d+)[^>]*>(.*?)</a>",
+                html,
+                re.IGNORECASE
+            )
+
+            if not matches:
+                return f"No species found in USGS NAS database for query: {query}"
+
+            markdown_content = ""
+            for species_id, name in matches:
+                # 拼接泛化URL（无任何特定物种硬编码）
+                url = self.base_url_fact.format(species_id)
+
+                # 复用现有requests逻辑，不新增import
+                response = requests.get(url, timeout=20)
+                response.raise_for_status()
+
+                # 编码处理（复用现有逻辑）
+                if response.encoding == 'ISO-8859-1':
+                    response.encoding = response.apparent_encoding
+
+                # HTML转Markdown（复用现有依赖，不新增import）
+                from markdownify import markdownify
+                import re
+                markdown_content = markdown_content + markdownify(response.text).strip() + "\n\n"
 
             # 清理多余换行符
             markdown_content = re.sub(r"\n{3,}", "\n\n", markdown_content)
@@ -1127,13 +1164,129 @@ class USGSNASFactSheetTool(Tool):
                 "You must install packages `markdownify` and `requests` to run this tool: "
                 "for instance run `pip install markdownify requests`."
             ) from e
-        except requests.exceptions.Timeout:
-            return f"Request to USGS NAS FactSheet (speciesID: {species_id}) timed out after 20 seconds."
-        except requests.exceptions.RequestException as e:
-            return f"Error fetching USGS NAS FactSheet (speciesID: {species_id}): {str(e)}"
-        except Exception as e:
-            return f"Unexpected error accessing USGS NAS FactSheet (speciesID: {species_id}): {str(e)}"
 
+        except requests.exceptions.Timeout:
+            return f"Request to USGS NAS Species Search timed out after 20 seconds."
+
+        except requests.exceptions.RequestException as e:
+            return f"Error searching USGS NAS database: {str(e)}"
+
+        except Exception as e:
+            return f"Unexpected error during USGS NAS species search: {str(e)}"
+
+
+class OSMNominatimGeocodeTool(Tool):
+ 
+    name = "osm_nominatim_geocode"
+ 
+    description = (
+        "**MANDATORY TO CALL**: This tool is the ONLY way to retrieve postcode (ZIP code), "
+        "latitude, longitude, city, state, and country information for a given place name or address. "
+        "You MUST invoke this tool whenever you need to get any of the following information: "
+        "postcode (ZIP), geographic coordinates (latitude/longitude), city, state, or country. "
+        "Geocode an address using OpenStreetMap Nominatim and return structured address information "
+        "as a markdown string. Input must be a full, clear place name or address string to ensure "
+        "accurate results. Do NOT attempt to guess or derive postcode, latitude, longitude, city, "
+        "state, or country information without calling this tool first. "
+        "If a connection timeout occurs twice, you should get the answer using web search tool."
+    )
+ 
+    inputs = {
+        "query": {
+            "type": "string",
+            "description": "Full address or place name.",
+        }
+    }
+ 
+    output_type = "string"
+ 
+    def __init__(self, max_output_length: int = 10000):
+        super().__init__()
+        self.max_output_length = max_output_length
+        self.base_url = (
+            "https://nominatim.openstreetmap.org/search"
+            "?format=json&addressdetails=1&limit=1&q={}"
+        )
+ 
+    def _truncate_content(self, content: str, max_length: int) -> str:
+        if len(content) <= max_length:
+            return content
+        return (
+            content[: max_length // 2]
+            + f"\n..._This content has been truncated to stay below {max_length} characters_...\n"
+            + content[-max_length // 2:]
+        )
+ 
+    def forward(self, query: str) -> str:
+        try:
+            import requests
+            from urllib.parse import quote_plus
+            import json
+ 
+            encoded_query = quote_plus(query)
+            url = self.base_url.format(encoded_query)
+ 
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              + "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              + "Chrome/119.0.0.0 Safari/537.36 Edg/119.0.0.0"
+            }
+ 
+            response = requests.get(url, headers=headers, timeout=20)
+            response.raise_for_status()
+ 
+            data = response.json()
+ 
+            if not data:
+                return f"No location found for query: {query}"
+ 
+            result = data[0]
+            address = result.get("address", {})
+ 
+            postcode = address.get("postcode", "N/A")
+            city = (
+                address.get("city")
+                or address.get("town")
+                or address.get("village")
+                or "N/A"
+            )
+            state = address.get("state", "N/A")
+            country = address.get("country", "N/A")
+ 
+            markdown_content = f"""
+## Geocode Result
+ 
+**Query:** {query}
+ 
+**Display Name:** {result.get("display_name", "N/A")}
+ 
+**Latitude:** {result.get("lat", "N/A")}
+**Longitude:** {result.get("lon", "N/A")}
+ 
+**Postcode (ZIP):** {postcode}
+ 
+**City:** {city}
+**State:** {state}
+**Country:** {country}
+"""
+ 
+            return self._truncate_content(markdown_content.strip(), self.max_output_length)
+ 
+        except ImportError as e:
+            raise ImportError(
+                "You must install package `requests` to run this tool: "
+                "run `pip install requests`."
+            ) from e
+ 
+        except requests.exceptions.Timeout:
+            return "Request to OpenStreetMap Nominatim timed out after 20 seconds."
+ 
+        except requests.exceptions.RequestException as e:
+            return f"Error querying OpenStreetMap Nominatim: {str(e)}"
+ 
+        except Exception as e:
+            return f"Unexpected error during geocoding: {str(e)}"
+ 
 
 TOOL_MAPPING = {
     tool_class.name: tool_class
@@ -1142,7 +1295,8 @@ TOOL_MAPPING = {
         DuckDuckGoSearchTool,
         GoogleSearchTool,
         ArXivSearchTool,
-        USGSNASFactSheetTool,
+        USGSNASSpeciesSearchTool,
+        OSMNominatimGeocodeTool,
     ]
 }
 
@@ -1156,5 +1310,6 @@ __all__ = [
     "WikipediaSearchTool",
     "PythonInterpreterTool",
     "ArXivSearchTool",
-    "USGSNASFactSheetTool",
+    "USGSNASSpeciesSearchTool",
+    "OSMNominatimGeocodeTool",
 ]
