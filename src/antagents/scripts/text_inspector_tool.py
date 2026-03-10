@@ -268,7 +268,7 @@ class TextInspectorTool(Tool):
     }
     output_type = "string"
 
-    def __init__(self, model: Model = None, text_limit: int = 100000):
+    def __init__(self, model: Model = None, text_limit: int = 300000):
         super().__init__()
         self.model = model
         self.text_limit = text_limit

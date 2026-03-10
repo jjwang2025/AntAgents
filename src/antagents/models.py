@@ -374,7 +374,7 @@ class Model:
         tool_name_key: str = "name",
         tool_arguments_key: str = "arguments",
         model_id: str | None = None,
-        max_token_limit: int = 100000,  # 添加最大token限制，默认100K
+        max_token_limit: int = 300000,  # 添加最大token限制，默认300K
         **kwargs,
     ):
         self.flatten_messages_as_text = flatten_messages_as_text
