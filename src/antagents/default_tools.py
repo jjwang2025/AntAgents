@@ -451,10 +451,21 @@ class GoogleSearchTool(Tool):
     }
     output_type = "string"
 
-    def __init__(self, provider: str = "serpapi"):
+    def __init__(self, provider: str = "serpapi", cache_ttl: int = 86400, cache_dir: str = "./search_cache"):
+        """
+        初始化搜索工具，缓存功能默认开启
+        :param provider: API提供商（serpapi/serper）
+        :param cache_ttl: 缓存过期时间（秒），默认1天（86400秒）
+        :param cache_dir: 缓存文件存储目录
+        """
         super().__init__()
-        import os
-
+        
+        # 缓存相关初始化（默认开启）
+        self.cache_ttl = cache_ttl
+        self.cache_dir = self._get_path(cache_dir)
+        self.cache_dir.mkdir(exist_ok=True)
+        
+        # 原有初始化逻辑
         self.provider = provider
         if provider == "serpapi":
             self.organic_key = "organic_results"
@@ -462,37 +473,128 @@ class GoogleSearchTool(Tool):
         else:
             self.organic_key = "organic"
             api_key_env_name = "SERPER_API_KEY"
-        self.api_key = os.getenv(api_key_env_name)
+        self.api_key = self._get_env(api_key_env_name)
         if self.api_key is None:
             raise ValueError(f"Missing API key. Make sure you have '{api_key_env_name}' in your env variables.")
 
+    def _get_path(self, path_str):
+        """内部方法：获取Path对象（避免头部import）"""
+        from pathlib import Path
+        return Path(path_str)
+
+    def _get_env(self, env_name):
+        """内部方法：获取环境变量（避免头部import）"""
+        import os
+        return os.getenv(env_name)
+
+    def _generate_cache_key(self, query: str, filter_year: int | None) -> str:
+        """生成唯一的缓存键"""
+        key_parts = [
+            self.provider,
+            query.replace(" ", "_").replace("/", "_").replace("?", "_"),
+            str(filter_year) if filter_year else "no_year"
+        ]
+        return "_".join(key_parts) + ".json"
+
+    def _get_cached_data(self, cache_key: str) -> dict | None:
+        """读取缓存数据，检查是否过期"""
+        import json
+        import time
+        
+        cache_file = self.cache_dir / cache_key
+        if not cache_file.exists():
+            return None
+        
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+            
+            # 检查缓存是否过期
+            current_time = time.time()
+            if current_time - cache_data["timestamp"] > self.cache_ttl:
+                if os.path.exists(cache_file):
+                    try:
+                        # 检查是否是文件（避免误删目录）
+                        if os.path.isfile(cache_file):
+                            os.remove(cache_file)
+                            print(f"成功删除过期缓存文件: {cache_file}")
+                        else:
+                            # 如果是目录，给出提示并跳过（或根据需求删除目录）
+                            print(f"警告: {cache_file} 是目录，而非文件，跳过删除")
+                    except PermissionError:
+                        # 权限不足异常处理
+                        print(f"错误: 没有权限删除文件 {cache_file}，请检查文件权限或是否被占用")
+                    except Exception as e:
+                        # 捕获其他所有异常，避免程序崩溃
+                        print(f"删除缓存文件 {cache_file} 失败: {str(e)}")
+                else:
+                    # 文件不存在时的友好提示（非错误）
+                    print(f"缓存文件 {cache_file} 不存在，无需删除")
+                return None
+            
+            return cache_data["data"]
+        except (json.JSONDecodeError, KeyError, OSError):
+            if cache_file.exists():
+                import os
+                os.remove(cache_file)
+            return None
+
+    def _save_to_cache(self, cache_key: str, data: dict):
+        """保存数据到缓存"""
+        import json
+        import time
+        
+        cache_file = self.cache_dir / cache_key
+        cache_data = {
+            "timestamp": time.time(),
+            "data": data
+        }
+        
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+
     def forward(self, query: str, filter_year: int | None = None) -> str:
-        import requests
-
-        if self.provider == "serpapi":
-            params = {
-                "q": query,
-                "api_key": self.api_key,
-                "engine": "google",
-                "google_domain": "google.com",
-            }
-            base_url = "https://serpapi.com/search.json"
+        # 1. 生成缓存键（默认开启缓存）
+        cache_key = self._generate_cache_key(query, filter_year)
+        
+        # 2. 尝试读取缓存
+        cached_data = self._get_cached_data(cache_key)
+        
+        # 3. 缓存命中则直接使用
+        if cached_data is not None:
+            results = cached_data
         else:
-            params = {
-                "q": query,
-                "api_key": self.api_key,
-            }
-            base_url = "https://google.serper.dev/search"
-        if filter_year is not None:
-            params["tbs"] = f"cdr:1,cd_min:01/01/{filter_year},cd_max:12/31/{filter_year}"
+            # 4. 缓存未命中，调用API
+            import requests
+            
+            if self.provider == "serpapi":
+                params = {
+                    "q": query,
+                    "api_key": self.api_key,
+                    "engine": "google",
+                    "google_domain": "google.com",
+                    "no_cache": False  # 启用SerpAPI服务器缓存
+                }
+                base_url = "https://serpapi.com/search.json"
+            else:
+                params = {
+                    "q": query,
+                    "api_key": self.api_key,
+                }
+                base_url = "https://google.serper.dev/search"
+            
+            if filter_year is not None:
+                params["tbs"] = f"cdr:1,cd_min:01/01/{filter_year},cd_max:12/31/{filter_year}"
 
-        response = requests.get(base_url, params=params)
+            response = requests.get(base_url, params=params)
+            
+            if response.status_code == 200:
+                results = response.json()
+                self._save_to_cache(cache_key, results)  # 保存到本地缓存
+            else:
+                raise ValueError(f"API请求失败: {response.status_code} - {response.text}")
 
-        if response.status_code == 200:
-            results = response.json()
-        else:
-            raise ValueError(response.json())
-
+        # 原有结果处理逻辑
         if self.organic_key not in results.keys():
             if filter_year is not None:
                 raise Exception(
@@ -1079,6 +1181,7 @@ class USGSNASSpeciesSearchTool(Tool):
         "corresponding scientific name. "
         "Inputs ONLY use common name, DO NOT use scientific name. "
         "If no results are returned, check whether the common name is incorrect. "
+        "If no results are returned, retry at least 3 times with different names. "
         "DO NOT run USGSNASSpeciesSearchToolin parallel with other search tools."
     )
 
@@ -1180,21 +1283,30 @@ class OSMNominatimGeocodeTool(Tool):
     name = "osm_nominatim_geocode"
  
     description = (
-        "**MANDATORY TO CALL**: This tool is the ONLY way to retrieve postcode (ZIP code), "
-        "latitude, longitude, city, state, and country information for a given place name or address. "
-        "You MUST invoke this tool whenever you need to get any of the following information: "
-        "postcode (ZIP), geographic coordinates (latitude/longitude), city, state, or country. "
-        "Geocode an address using OpenStreetMap Nominatim and return structured address information "
-        "as a markdown string. Input must be a full, clear place name or address string to ensure "
-        "accurate results. Do NOT attempt to guess or derive postcode, latitude, longitude, city, "
-        "state, or country information without calling this tool first. "
-        "If a connection timeout occurs twice, you should get the answer using web search tool."
+        "TRIGGER CONDITIONS (MUST CALL WHEN):\n"
+        "1. User's question contains any of these keywords: ZIP code, postcode, postal code, latitude, longitude, 邮编\n"
+        "2. User asks for geographic info of a place (city/state/country + zip/coordinates)\n"
+        "\n"
+        "STRICT RULES:\n"
+        "- NEVER guess, estimate, or derive postcode/ZIP code/latitude/longitude from memory\n"
+        "- NEVER answer geographic info without calling this tool first\n"
+        "- MUST call this tool even if the address is incomplete (e.g., 'Manhattan' instead of 'Manhattan, NY')\n"
+        "- If tool returns no results, use web search tool (DO NOT fallback to guessing)\n"
+        "\n"
+        "TOOL PURPOSE:\n"
+        "Geocode an address/place name using OpenStreetMap Nominatim to get ACCURATE postcode (ZIP), "
+        "latitude, longitude, city, state, country.\n"
+        "\n"
+        "INPUT RULE:\n"
+        "query: Accept ANY place name/address (partial or full) related to the user's question "
+        "(e.g., 'Manhattan NY', '北京市朝阳区')."
     )
- 
+    
     inputs = {
         "query": {
             "type": "string",
-            "description": "Full address or place name.",
+            "description": "Place name/address (partial or full) from user's question "
+                           + "(no need to be 'full' - tool handles incomplete inputs)."
         }
     }
  
