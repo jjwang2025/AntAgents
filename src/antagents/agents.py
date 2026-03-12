@@ -6,6 +6,7 @@ import re
 import textwrap
 import time
 import warnings
+import traceback
 from datetime import datetime
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
@@ -1004,6 +1005,12 @@ class ToolCallingAgent(MultiStepAgent):
             memory_step.model_output = chat_message.content
             memory_step.token_usage = chat_message.token_usage
         except Exception as e:
+            print("=" * 50)
+            print(f"异常类型: {type(e).__name__}")
+            print(f"异常描述: {e}")
+            print("完整错误堆栈:")
+            traceback.print_exc()
+            print("=" * 50)
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
 
         if chat_message.tool_calls is None or len(chat_message.tool_calls) == 0:
@@ -1154,6 +1161,12 @@ class ToolCallingAgent(MultiStepAgent):
                 return tool(arguments) if is_managed_agent else tool(arguments, sanitize_inputs_outputs=True)
 
         except Exception as e:
+            print("=" * 50)
+            print(f"异常类型: {type(e).__name__}")
+            print(f"异常描述: {e}")
+            print("完整错误堆栈:")
+            traceback.print_exc()
+            print("=" * 50)
             # 处理执行错误
             if is_managed_agent:
                 error_msg = (
