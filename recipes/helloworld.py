@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from antagents import OpenAIServerModel, ToolCallingAgent, WebSearchTool
 
-load_dotenv()
+load_dotenv(override=True)
 
 model = OpenAIServerModel(
     model_id=os.getenv("DEEPSEEK_MODEL_ID"),
@@ -20,8 +20,7 @@ model = OpenAIServerModel(
 try:
     tools = [WebSearchTool()]
     agent = ToolCallingAgent(tools=tools, model=model)
-    #agent.run("东北虎以最快的速度，需要多长时间能跑过郑州黄河大桥？")
-    agent.run("北京、上海、天津哪个城市最热？")
+    agent.run("东北虎以最快的速度，需要多长时间能跑过郑州黄河大桥？")
     #agent.replay(detailed=True)
 finally:
     pass
