@@ -6,18 +6,50 @@
 """
 
 import os
+import sys
 from typing import List
 
 from dotenv import load_dotenv
 
 from antagents import (
-    OpenAIServerModel,
+    BuiltinToolEventStreamDelta,
     ChatMessage,
-    MessageRole,
     ChatMessageStreamDelta,
+    MessageRole,
+    OpenAIServerModel,
     TokenUsage,
     agglomerate_stream_deltas,
 )
+
+
+def safe_print(*args, sep: str = " ", end: str = "\n", flush: bool = False) -> None:
+    """Print text safely on Windows terminals with legacy encodings.
+
+    Some responses contain characters that cannot be encoded by GBK/CP936.
+    When that happens, fall back to a replacement-based write so the example
+    keeps running instead of crashing in the middle of a stream.
+    """
+
+    text = sep.join(str(arg) for arg in args)
+    output = text + end
+    try:
+        print(text, sep=sep, end=end, flush=flush)
+    except UnicodeEncodeError:
+        encoding = sys.stdout.encoding or "utf-8"
+        safe_output = output.encode(encoding, errors="replace").decode(encoding, errors="replace")
+        sys.stdout.write(safe_output)
+        if flush:
+            sys.stdout.flush()
+
+
+def print_builtin_tool_events(events: List[BuiltinToolEventStreamDelta], prefix: str = "") -> None:
+    """Pretty-print structured built-in tool events from the responses API."""
+    if not events:
+        return
+    safe_print(f"\n{prefix}[builtin] 内建工具事件:")
+    for event in events:
+        item_suffix = f" (id={event.item_id})" if event.item_id else ""
+        safe_print(f"{prefix}- {event.tool_type}: {event.status}{item_suffix}")
 
 
 def create_example_messages() -> List[ChatMessage]:
@@ -34,216 +66,212 @@ def create_example_messages() -> List[ChatMessage]:
     ]
 
 
-def print_messages_detailed(messages: List[ChatMessage]):
-    """美观地打印消息详情"""
-    print("🔍 输入的Prompt详情:")
-    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    
+def print_messages_detailed(messages: List[ChatMessage]) -> None:
+    """打印消息详情。"""
+    safe_print("[input] 输入的 Prompt 详情:")
+    safe_print("=" * 60)
+
+    role_labels = {
+        MessageRole.SYSTEM: "[SYSTEM]",
+        MessageRole.USER: "[USER]",
+        MessageRole.ASSISTANT: "[ASSISTANT]",
+        MessageRole.TOOL_CALL: "[TOOL_CALL]",
+        MessageRole.TOOL_RESPONSE: "[TOOL_RESPONSE]",
+    }
+
     for i, msg in enumerate(messages, 1):
-        # 角色图标映射
-        role_icons = {
-            MessageRole.SYSTEM: "⚙️",
-            MessageRole.USER: "👤",
-            MessageRole.ASSISTANT: "🤖",
-            MessageRole.TOOL_CALL: "🛠️",
-            MessageRole.TOOL_RESPONSE: "📋",
-        }
-        
-        role_emoji = role_icons.get(msg.role, "📝")
-        
-        print(f"{role_emoji} 消息 {i} [{msg.role.value.upper()}]:")
-        
-        # 处理内容（支持多模态）
+        role_label = role_labels.get(msg.role, "[MESSAGE]")
+        safe_print(f"{role_label} 消息 {i} [{msg.role.value.upper()}]:")
+
         if isinstance(msg.content, list):
-            print(f"   📄 内容类型: 多模态 ({len(msg.content)} 个部分)")
+            safe_print(f"   内容类型: 多模态 ({len(msg.content)} 个部分)")
             for j, part in enumerate(msg.content, 1):
                 if isinstance(part, dict):
-                    if part.get('type') == 'text':
-                        content_preview = part.get('text', '')[:100] + '...' if len(part.get('text', '')) > 100 else part.get('text', '')
-                        print(f"      {j}. 文本: {content_preview}")
-                    elif part.get('type') in ['image', 'image_url']:
-                        print(f"      {j}. 图像: [图像内容]")
+                    if part.get("type") == "text":
+                        text = part.get("text", "")
+                        content_preview = text[:100] + "..." if len(text) > 100 else text
+                        safe_print(f"      {j}. 文本: {content_preview}")
+                    elif part.get("type") in ["image", "image_url"]:
+                        safe_print(f"      {j}. 图像: [图像内容]")
         else:
-            content_preview = str(msg.content)[:100] + '...' if msg.content and len(str(msg.content)) > 100 else msg.content
-            print(f"   📄 内容: {content_preview}")
-        
-        # 显示工具调用
+            text = str(msg.content)
+            content_preview = text[:100] + "..." if text and len(text) > 100 else msg.content
+            safe_print(f"   内容: {content_preview}")
+
         if msg.tool_calls:
-            print(f"   🛠️  工具调用: {len(msg.tool_calls)} 个")
+            safe_print(f"   工具调用: {len(msg.tool_calls)} 个")
             for tool_call in msg.tool_calls:
-                if hasattr(tool_call, 'function'):
-                    print(f"      - {tool_call.function.name}")
-        
-        # 显示token使用情况（如果有）
+                if hasattr(tool_call, "function"):
+                    safe_print(f"      - {tool_call.function.name}")
+
         if msg.token_usage:
-            print(f"   📊 Token使用: 输入={msg.token_usage.input_tokens}, 输出={msg.token_usage.output_tokens}")
-        
+            safe_print(f"   Token 使用: 输入={msg.token_usage.input_tokens}, 输出={msg.token_usage.output_tokens}")
+
         if i < len(messages):
-            print("   ────────────────────────────────────────")
+            safe_print("   " + "-" * 40)
 
 
-def non_streaming_example(model: OpenAIServerModel, messages: List[ChatMessage]):
-    """非流式调用示例"""
-    print("\n🚀 开始非流式调用...")
-    print("=" * 60)
-    
+def non_streaming_example(model: OpenAIServerModel, messages: List[ChatMessage]) -> bool:
+    """非流式调用示例。"""
+    safe_print("\n[run] 开始非流式调用...")
+    safe_print("=" * 60)
+
     try:
         response = model.generate(messages=messages)
-        
-        print("✅ 非流式调用成功！")
-        print("\n📋 模型回复:")
-        print("-" * 40)
-        print(response.content)
-        print("-" * 40)
-        
+
+        safe_print("[ok] 非流式调用成功")
+        safe_print("\n[reply] 模型回复:")
+        safe_print("-" * 40)
+        safe_print(response.content)
+        safe_print("-" * 40)
+
         if response.token_usage:
-            print("\n📊 Token 使用统计:")
-            print(f"   📥 输入Token: {response.token_usage.input_tokens}")
-            print(f"   📤 输出Token: {response.token_usage.output_tokens}")
-            print(f"   📊 总Token: {response.token_usage.input_tokens + response.token_usage.output_tokens}")
-        
-        # 显示工具调用（如果有）
+            safe_print("\n[token] Token 使用统计:")
+            safe_print(f"   输入 Token: {response.token_usage.input_tokens}")
+            safe_print(f"   输出 Token: {response.token_usage.output_tokens}")
+            safe_print(f"   总 Token: {response.token_usage.input_tokens + response.token_usage.output_tokens}")
+
         if response.tool_calls:
-            print("\n🛠️  工具调用:")
+            safe_print("\n[tools] 工具调用:")
             for tool_call in response.tool_calls:
-                if hasattr(tool_call, 'function'):
-                    print(f"   - {tool_call.function.name}: {tool_call.function.arguments}")
-            
+                if hasattr(tool_call, "function"):
+                    safe_print(f"   - {tool_call.function.name}: {tool_call.function.arguments}")
+
     except Exception as e:
-        print(f"❌ 非流式调用过程中出现错误: {e}")
+        safe_print(f"[error] 非流式调用过程中出现错误: {e}")
         import traceback
+
         traceback.print_exc()
         return False
-    
+
     return True
 
 
-def streaming_example(model: OpenAIServerModel, messages: List[ChatMessage]):
-    """流式调用示例"""
-    print("\n🚀 开始流式调用...")
-    print("=" * 60)
-    
+def streaming_example(model: OpenAIServerModel, messages: List[ChatMessage]) -> bool:
+    """流式调用示例。"""
+    safe_print("\n[run] 开始流式调用...")
+    safe_print("=" * 60)
+
     try:
-        print("📝 模型回复 (流式):")
-        print("-" * 40)
-        
-        full_response = ""
+        safe_print("[stream] 模型回复:")
+        safe_print("-" * 40)
+
         final_token_usage = TokenUsage(input_tokens=0, output_tokens=0)
         stream_deltas: List[ChatMessageStreamDelta] = []
-        
+
         for delta in model.generate_stream(messages=messages):
             stream_deltas.append(delta)
             if delta.content:
-                print(delta.content, end="", flush=True)
-                full_response += delta.content
-            
+                safe_print(delta.content, end="", flush=True)
+
+            if delta.builtin_tool_events:
+                print_builtin_tool_events(delta.builtin_tool_events, prefix="   ")
+
             if delta.token_usage:
                 final_token_usage.input_tokens += delta.token_usage.input_tokens
                 final_token_usage.output_tokens += delta.token_usage.output_tokens
 
-        print("\n" + "-" * 40)
+        safe_print("\n" + "-" * 40)
 
-        print("\n📊 Token 使用统计:")
-        print(f"   📥 输入Token: {final_token_usage.input_tokens}")
-        print(f"   📤 输出Token: {final_token_usage.output_tokens}")
-        print(f"   📊 总Token: {final_token_usage.input_tokens + final_token_usage.output_tokens}")
+        safe_print("\n[token] Token 使用统计:")
+        safe_print(f"   输入 Token: {final_token_usage.input_tokens}")
+        safe_print(f"   输出 Token: {final_token_usage.output_tokens}")
+        safe_print(f"   总 Token: {final_token_usage.input_tokens + final_token_usage.output_tokens}")
 
-        # 显示工具调用（如果有）
-        # Streaming tool-call arguments arrive incrementally, so aggregate before printing.
         aggregated = agglomerate_stream_deltas(stream_deltas)
         if aggregated.tool_calls:
-            print("\n🛠️  工具调用:")
+            safe_print("\n[tools] 工具调用:")
             for tool_call in aggregated.tool_calls:
-                print(f"   - {tool_call.function.name}: {tool_call.function.arguments}")
-            
+                safe_print(f"   - {tool_call.function.name}: {tool_call.function.arguments}")
+
     except Exception as e:
-        print(f"❌ 流式调用过程中出现错误: {e}")
+        safe_print(f"[error] 流式调用过程中出现错误: {e}")
         import traceback
+
         traceback.print_exc()
         return False
-    
+
     return True
 
 
-def interactive_chat(model: OpenAIServerModel):
-    """交互式聊天示例"""
-    print("\n💬 进入交互式聊天模式 (输入 'quit' 退出)")
-    print("=" * 60)
-    
-    # 系统提示词
+def interactive_chat(model: OpenAIServerModel) -> None:
+    """交互式聊天示例。"""
+    safe_print("\n[chat] 进入交互式聊天模式 (输入 'quit' 退出)")
+    safe_print("=" * 60)
+
     system_message = ChatMessage(
         role=MessageRole.SYSTEM,
         content="你是一个有帮助的AI助手，请用中文进行友好、专业的对话。",
     )
-    
     messages = [system_message]
-    
+
     while True:
         try:
-            user_input = input("\n👤 您: ").strip()
-            
-            if user_input.lower() in ['quit', 'exit', 'q']:
-                print("👋 退出交互模式")
+            user_input = input("\n您: ").strip()
+
+            if user_input.lower() in ["quit", "exit", "q"]:
+                safe_print("退出交互模式")
                 break
-                
+
             if not user_input:
                 continue
-                
-            # 添加用户消息
-            user_message = ChatMessage(role=MessageRole.USER, content=user_input)
-            messages.append(user_message)
-            
-            print("\n🤖 AI: ", end="", flush=True)
-            
-            # 流式响应
+
+            messages.append(ChatMessage(role=MessageRole.USER, content=user_input))
+            safe_print("\nAI: ", end="", flush=True)
+
             response_content = ""
             token_usage = TokenUsage(input_tokens=0, output_tokens=0)
-            
             stream_deltas: List[ChatMessageStreamDelta] = []
+
             for delta in model.generate_stream(messages=messages):
                 stream_deltas.append(delta)
                 if delta.content:
-                    print(delta.content, end="", flush=True)
+                    safe_print(delta.content, end="", flush=True)
                     response_content += delta.content
-                
+
+                if delta.builtin_tool_events:
+                    print_builtin_tool_events(delta.builtin_tool_events, prefix="   ")
+
                 if delta.token_usage:
                     token_usage.input_tokens += delta.token_usage.input_tokens
                     token_usage.output_tokens += delta.token_usage.output_tokens
 
             aggregated = agglomerate_stream_deltas(stream_deltas)
             if aggregated.tool_calls:
-                print("\n   🛠️ 工具调用:")
+                safe_print("\n   [tools] 工具调用:")
                 for tool_call in aggregated.tool_calls:
-                    print(f"   - {tool_call.function.name}: {tool_call.function.arguments}")
-            
-            # 添加AI回复到消息历史
+                    safe_print(f"   - {tool_call.function.name}: {tool_call.function.arguments}")
+
             if response_content:
-                assistant_message = ChatMessage(
-                    role=MessageRole.ASSISTANT,
-                    content=response_content,
-                    token_usage=token_usage,
+                messages.append(
+                    ChatMessage(
+                        role=MessageRole.ASSISTANT,
+                        content=response_content,
+                        token_usage=token_usage,
+                    )
                 )
-                messages.append(assistant_message)
-                
-            # 显示本次调用的token使用
-            print(f"\n   📊 本次调用Token: 输入={token_usage.input_tokens}, 输出={token_usage.output_tokens}")
-                
+
+            safe_print(f"\n   [token] 本次调用: 输入={token_usage.input_tokens}, 输出={token_usage.output_tokens}")
+
         except KeyboardInterrupt:
-            print("\n👋 用户中断，退出交互模式")
+            safe_print("\n用户中断，退出交互模式")
+            break
+        except EOFError:
+            safe_print("\n[info] 检测到非交互输入结束，退出交互式聊天示例")
             break
         except Exception as e:
-            print(f"\n❌ 聊天过程中出现错误: {e}")
+            safe_print(f"\n[error] 聊天过程中出现错误: {e}")
             import traceback
+
             traceback.print_exc()
             break
 
 
-def main():
-    """主函数"""
-    print("🤖 大模型调用示例程序")
-    print("=" * 60)
+def main() -> None:
+    """主函数。"""
+    safe_print("模型调用示例程序")
+    safe_print("=" * 60)
 
-    # 初始化模型
     try:
         api_mode = os.getenv("OPENAI_API_MODE", "auto")
         model = OpenAIServerModel(
@@ -252,44 +280,42 @@ def main():
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             api_mode=api_mode,
         )
-        print(f"✅ 模型初始化成功: {model.model_id} (api_mode={api_mode})")
-        
+        safe_print(f"[ok] 模型初始化成功: {model.model_id} (api_mode={api_mode})")
+
     except Exception as e:
-        print(f"❌ 模型初始化失败: {e}")
+        safe_print(f"[error] 模型初始化失败: {e}")
         import traceback
+
         traceback.print_exc()
         return
-    
-    # 创建示例消息
+
     messages = create_example_messages()
-    
-    # 显示消息详情
     print_messages_detailed(messages)
-    
-    # 非流式调用示例
+
     success = non_streaming_example(model, messages)
     if not success:
-        print("⚠️  非流式调用失败，跳过后续示例")
+        safe_print("[warn] 非流式调用失败，跳过后续示例")
         return
-    
-    # 流式调用示例
+
     success = streaming_example(model, messages)
     if not success:
-        print("⚠️  流式调用失败")
+        safe_print("[warn] 流式调用失败")
         return
-    
-    # 交互式聊天示例
-    try:
-        interactive_chat(model)
-    except Exception as e:
-        print(f"❌ 交互式聊天失败: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    print("\n🎉 程序执行完成！")
+
+    if sys.stdin.isatty():
+        try:
+            interactive_chat(model)
+        except Exception as e:
+            safe_print(f"[error] 交互式聊天失败: {e}")
+            import traceback
+
+            traceback.print_exc()
+    else:
+        safe_print("[info] 检测到非交互终端，跳过交互式聊天示例")
+
+    safe_print("\n程序执行完成")
 
 
 if __name__ == "__main__":
     load_dotenv(override=True)
-
     main()

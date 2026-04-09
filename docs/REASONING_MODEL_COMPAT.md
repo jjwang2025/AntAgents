@@ -114,9 +114,9 @@ CLI 新增参数：
 - function tool call 的名称与参数增量
 - 完成事件中的 token usage 汇总
 - reasoning summary 文本增量展示
-- built-in tool 进度事件的基础文本展示
+- built-in tool 进度事件的结构化归一化与基础文本展示
 
-当前对 built-in tools 仍是基础展示，不包含更细的结构化渲染。
+当前对 built-in tools 已在模型层归一化出结构化事件字段，但 UI/CLI 仍以轻量文本渲染为主。
 
 ### 2. 当前优先支持 function tool call
 

@@ -62,11 +62,22 @@ def main() -> None:
         if delta is not None:
             deltas.append(delta)
 
+    builtin_events = [
+        event
+        for delta in deltas
+        for event in (delta.builtin_tool_events or [])
+    ]
+
     message = agglomerate_stream_deltas(deltas)
 
     assert "Planning..." in (message.content or "")
     assert "done" in (message.content or "")
-    assert "[web_search] in progress" in (message.content or "")
+    assert builtin_events
+    assert builtin_events[0].tool_type == "web_search_call"
+    assert builtin_events[0].status == "in_progress"
+    assert builtin_events[0].item_id == "w1"
+    assert builtin_events[1].status == "completed"
+    assert "[web_search_call] in_progress (w1)" in (message.content or "")
     assert message.tool_calls is not None
     assert len(message.tool_calls) == 1
     assert message.tool_calls[0].id == "call_1"

@@ -162,7 +162,17 @@ class ChatMessageToolCallStreamDelta:
 class ChatMessageStreamDelta:
     content: str | None = None
     tool_calls: list[ChatMessageToolCallStreamDelta] | None = None
+    builtin_tool_events: list["BuiltinToolEventStreamDelta"] | None = None
     token_usage: TokenUsage | None = None
+
+
+@dataclass
+class BuiltinToolEventStreamDelta:
+    tool_type: str
+    status: str
+    item_id: str | None = None
+    index: int | None = None
+    raw_type: str | None = None
 
 
 def agglomerate_stream_deltas(
@@ -175,12 +185,20 @@ def agglomerate_stream_deltas(
     accumulated_content = ""
     total_input_tokens = 0
     total_output_tokens = 0
+    builtin_status_lines: list[str] = []
     for stream_delta in stream_deltas:
         if stream_delta.token_usage:
             total_input_tokens += stream_delta.token_usage.input_tokens
             total_output_tokens += stream_delta.token_usage.output_tokens
         if stream_delta.content:
             accumulated_content += stream_delta.content
+        if stream_delta.builtin_tool_events:
+            builtin_status_lines.extend(
+                [
+                    f"[{event.tool_type}] {event.status}" + (f" ({event.item_id})" if event.item_id else "")
+                    for event in stream_delta.builtin_tool_events
+                ]
+            )
         if stream_delta.tool_calls:
             for tool_call_delta in stream_delta.tool_calls:  # 通常一次应该只有一个调用
                 # 如果需要，扩展accumulated_tool_calls列表以容纳新的工具调用
@@ -204,6 +222,10 @@ def agglomerate_stream_deltas(
                             tool_call.function.arguments += tool_call_delta.function.arguments
                 else:
                     raise ValueError(f"Tool call index is not provided in tool delta: {tool_call_delta}")
+
+    if builtin_status_lines:
+        status_block = "\n".join(builtin_status_lines)
+        accumulated_content = f"{accumulated_content}\n{status_block}" if accumulated_content else status_block
 
     return ChatMessage(
         role=role,
@@ -864,30 +886,23 @@ class OpenAIServerModel(ApiModel):
     def _responses_stream_event_to_delta(self, event: Any) -> ChatMessageStreamDelta | None:
         event_type = getattr(event, "type", None)
 
-        status_messages = {
-            "response.reasoning_summary_text.delta": getattr(event, "delta", None),
-            "response.web_search_call.in_progress": "\n[web_search] in progress\n",
-            "response.web_search_call.searching": "\n[web_search] searching\n",
-            "response.web_search_call.completed": "\n[web_search] completed\n",
-            "response.file_search_call.in_progress": "\n[file_search] in progress\n",
-            "response.file_search_call.searching": "\n[file_search] searching\n",
-            "response.file_search_call.completed": "\n[file_search] completed\n",
-            "response.code_interpreter_call.in_progress": "\n[code_interpreter] in progress\n",
-            "response.code_interpreter_call.interpreting": "\n[code_interpreter] interpreting\n",
-            "response.code_interpreter_call.completed": "\n[code_interpreter] completed\n",
-            "response.mcp_call.in_progress": "\n[mcp_call] in progress\n",
-            "response.mcp_call.completed": "\n[mcp_call] completed\n",
-            "response.mcp_call.failed": "\n[mcp_call] failed\n",
-            "response.mcp_list_tools.in_progress": "\n[mcp_list_tools] in progress\n",
-            "response.mcp_list_tools.completed": "\n[mcp_list_tools] completed\n",
-            "response.mcp_list_tools.failed": "\n[mcp_list_tools] failed\n",
-        }
+        builtin_event_match = re.match(r"^response\.([a-z_]+_call|mcp_list_tools)\.([a-z_]+)$", event_type or "")
+        if builtin_event_match:
+            tool_type, status = builtin_event_match.groups()
+            return ChatMessageStreamDelta(
+                builtin_tool_events=[
+                    BuiltinToolEventStreamDelta(
+                        tool_type=tool_type,
+                        status=status,
+                        item_id=getattr(event, "item_id", None),
+                        index=getattr(event, "output_index", None),
+                        raw_type=event_type,
+                    )
+                ]
+            )
 
-        if event_type in status_messages:
-            content = status_messages[event_type]
-            if content:
-                return ChatMessageStreamDelta(content=content)
-            return None
+        if event_type == "response.reasoning_summary_text.delta":
+            return ChatMessageStreamDelta(content=getattr(event, "delta", None))
 
         if event_type == "response.output_text.delta":
             return ChatMessageStreamDelta(content=getattr(event, "delta", None))
@@ -916,10 +931,17 @@ class OpenAIServerModel(ApiModel):
                 "mcp_list_tools",
                 "local_shell_call",
             }:
-                # Keep built-in tool progress visible even though the current UI only renders text/tool-calls.
-                item_type = getattr(item, "type", "tool")
-                call_id = getattr(item, "call_id", None) or getattr(item, "id", None) or ""
-                return ChatMessageStreamDelta(content=f"\n[{item_type}] added {call_id}\n")
+                return ChatMessageStreamDelta(
+                    builtin_tool_events=[
+                        BuiltinToolEventStreamDelta(
+                            tool_type=getattr(item, "type", "tool"),
+                            status="added",
+                            item_id=getattr(item, "call_id", None) or getattr(item, "id", None),
+                            index=getattr(event, "output_index", None),
+                            raw_type=event_type,
+                        )
+                    ]
+                )
             return None
 
         if event_type == "response.function_call_arguments.delta":
@@ -1305,6 +1327,7 @@ class GeminiServerModel(ApiModel):
 
 __all__ = [
     "MessageRole",
+    "BuiltinToolEventStreamDelta",
     "tool_role_conversions",
     "get_clean_message_list",
     "Model",
