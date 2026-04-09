@@ -17,7 +17,8 @@ from antagents import (
     ChatMessage,
     MessageRole,
     ChatMessageStreamDelta,
-    TokenUsage
+    TokenUsage,
+    agglomerate_stream_deltas,
 )
 
 
@@ -130,9 +131,10 @@ def streaming_example(model: OpenAIServerModel, messages: List[ChatMessage]):
         
         full_response = ""
         final_token_usage = TokenUsage(input_tokens=0, output_tokens=0)
-        tool_calls_accumulated = []
+        stream_deltas: List[ChatMessageStreamDelta] = []
         
         for delta in model.generate_stream(messages=messages):
+            stream_deltas.append(delta)
             if delta.content:
                 print(delta.content, end="", flush=True)
                 full_response += delta.content
@@ -143,8 +145,7 @@ def streaming_example(model: OpenAIServerModel, messages: List[ChatMessage]):
             
             # 处理工具调用（如果有）
             if delta.tool_calls:
-                # 这里简化处理，实际使用时需要更复杂的累积逻辑
-                tool_calls_accumulated.extend(delta.tool_calls)
+                pass
         
         print("\n" + "-" * 40)
         
@@ -154,8 +155,11 @@ def streaming_example(model: OpenAIServerModel, messages: List[ChatMessage]):
         print(f"   📊 总Token: {final_token_usage.input_tokens + final_token_usage.output_tokens}")
         
         # 显示工具调用（如果有）
-        if tool_calls_accumulated:
-            print("\n🛠️  工具调用检测到（流式模式下工具调用需要特殊处理）")
+        aggregated = agglomerate_stream_deltas(stream_deltas)
+        if aggregated.tool_calls:
+            print("\n🛠️  工具调用:")
+            for tool_call in aggregated.tool_calls:
+                print(f"   - {tool_call.function.name}: {tool_call.function.arguments}")
             
     except Exception as e:
         print(f"❌ 流式调用过程中出现错误: {e}")
@@ -200,7 +204,9 @@ def interactive_chat(model: OpenAIServerModel):
             response_content = ""
             token_usage = TokenUsage(input_tokens=0, output_tokens=0)
             
+            stream_deltas: List[ChatMessageStreamDelta] = []
             for delta in model.generate_stream(messages=messages):
+                stream_deltas.append(delta)
                 if delta.content:
                     print(delta.content, end="", flush=True)
                     response_content += delta.content
@@ -208,6 +214,12 @@ def interactive_chat(model: OpenAIServerModel):
                 if delta.token_usage:
                     token_usage.input_tokens += delta.token_usage.input_tokens
                     token_usage.output_tokens += delta.token_usage.output_tokens
+
+            aggregated = agglomerate_stream_deltas(stream_deltas)
+            if aggregated.tool_calls:
+                print("\n   🛠️ 工具调用:")
+                for tool_call in aggregated.tool_calls:
+                    print(f"   - {tool_call.function.name}: {tool_call.function.arguments}")
             
             # 添加AI回复到消息历史
             if response_content:
@@ -238,12 +250,14 @@ def main():
     
     # 初始化模型
     try:
+        api_mode = os.getenv("OPENAI_API_MODE", "auto")
         model = OpenAIServerModel(
             model_id=os.getenv("DEEPSEEK_MODEL_ID"),
             api_base=os.getenv("DEEPSEEK_URL"),
-            api_key=os.getenv("DEEPSEEK_API_KEY")
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            api_mode=api_mode,
         )
-        print(f"✅ 模型初始化成功: {model.model_id}")
+        print(f"✅ 模型初始化成功: {model.model_id} (api_mode={api_mode})")
         
     except Exception as e:
         print(f"❌ 模型初始化失败: {e}")

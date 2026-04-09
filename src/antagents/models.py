@@ -854,6 +854,86 @@ class OpenAIServerModel(ApiModel):
             token_usage=self._extract_token_usage_from_response(response),
         )
 
+    def _responses_stream_event_to_delta(self, event: Any) -> ChatMessageStreamDelta | None:
+        event_type = getattr(event, "type", None)
+
+        status_messages = {
+            "response.reasoning_summary_text.delta": getattr(event, "delta", None),
+            "response.web_search_call.in_progress": "\n[web_search] in progress\n",
+            "response.web_search_call.searching": "\n[web_search] searching\n",
+            "response.web_search_call.completed": "\n[web_search] completed\n",
+            "response.file_search_call.in_progress": "\n[file_search] in progress\n",
+            "response.file_search_call.searching": "\n[file_search] searching\n",
+            "response.file_search_call.completed": "\n[file_search] completed\n",
+            "response.code_interpreter_call.in_progress": "\n[code_interpreter] in progress\n",
+            "response.code_interpreter_call.interpreting": "\n[code_interpreter] interpreting\n",
+            "response.code_interpreter_call.completed": "\n[code_interpreter] completed\n",
+            "response.mcp_call.in_progress": "\n[mcp_call] in progress\n",
+            "response.mcp_call.completed": "\n[mcp_call] completed\n",
+            "response.mcp_call.failed": "\n[mcp_call] failed\n",
+            "response.mcp_list_tools.in_progress": "\n[mcp_list_tools] in progress\n",
+            "response.mcp_list_tools.completed": "\n[mcp_list_tools] completed\n",
+            "response.mcp_list_tools.failed": "\n[mcp_list_tools] failed\n",
+        }
+
+        if event_type in status_messages:
+            content = status_messages[event_type]
+            if content:
+                return ChatMessageStreamDelta(content=content)
+            return None
+
+        if event_type == "response.output_text.delta":
+            return ChatMessageStreamDelta(content=getattr(event, "delta", None))
+
+        if event_type == "response.output_item.added":
+            item = getattr(event, "item", None)
+            if getattr(item, "type", None) == "function_call":
+                return ChatMessageStreamDelta(
+                    tool_calls=[
+                        ChatMessageToolCallStreamDelta(
+                            index=getattr(event, "output_index", None),
+                            id=getattr(item, "call_id", None) or getattr(item, "id", None),
+                            type="function",
+                            function=ChatMessageToolCallFunction(
+                                name=getattr(item, "name", ""),
+                                arguments="",
+                            ),
+                        )
+                    ]
+                )
+            if getattr(item, "type", None) in {
+                "web_search_call",
+                "file_search_call",
+                "code_interpreter_call",
+                "mcp_call",
+                "mcp_list_tools",
+                "local_shell_call",
+            }:
+                item_type = getattr(item, "type", "tool")
+                call_id = getattr(item, "call_id", None) or getattr(item, "id", None) or ""
+                return ChatMessageStreamDelta(content=f"\n[{item_type}] added {call_id}\n")
+            return None
+
+        if event_type == "response.function_call_arguments.delta":
+            return ChatMessageStreamDelta(
+                tool_calls=[
+                    ChatMessageToolCallStreamDelta(
+                        index=getattr(event, "output_index", None),
+                        function=ChatMessageToolCallFunction(
+                            name="",
+                            arguments=getattr(event, "delta", ""),
+                        ),
+                    )
+                ]
+            )
+
+        if event_type == "response.completed":
+            response = getattr(event, "response", None)
+            token_usage = self._extract_token_usage_from_response(response)
+            return ChatMessageStreamDelta(content="", token_usage=token_usage)
+
+        return None
+
     def generate_stream(
         self,
         messages: list[ChatMessage | dict],
@@ -863,7 +943,21 @@ class OpenAIServerModel(ApiModel):
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
         if self._uses_responses_api():
-            raise NotImplementedError("Streaming for responses API is not implemented yet. Use stream=False for reasoning models.")
+            estimated_output_tokens = kwargs.get('max_tokens', 1000)
+            responses_kwargs = self._prepare_responses_kwargs(
+                messages=messages,
+                response_format=response_format,
+                tools_to_call_from=tools_to_call_from,
+                estimated_output_tokens=estimated_output_tokens,
+                **kwargs,
+            )
+            responses_kwargs.pop("stream", None)
+            self._apply_rate_limit()
+            for event in self.client.responses.create(**responses_kwargs, stream=True):
+                delta = self._responses_stream_event_to_delta(event)
+                if delta is not None:
+                    yield delta
+            return
 
         # 估算输出token数（基于max_tokens参数）
         estimated_output_tokens = kwargs.get('max_tokens', 1000)

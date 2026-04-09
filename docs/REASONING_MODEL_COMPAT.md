@@ -106,17 +106,19 @@ CLI 新增参数：
 
 ## 当前限制
 
-### 1. `responses` 流式尚未实现
+### 1. `responses` 流式已支持基础文本和 function tool call
 
-目前 reasoning 模型只保证非流式路径可用。
+目前 `responses` 流式路径已支持：
 
-如果调用了 `generate_stream()` 且当前模型被判定为 `responses` 路径，会抛出明确错误：
+- 文本增量输出
+- function tool call 的名称与参数增量
+- 完成事件中的 token usage 汇总
+- reasoning summary 文本增量展示
+- built-in tool 进度事件的基础文本展示
 
-```text
-Streaming for responses API is not implemented yet. Use stream=False for reasoning models.
-```
+当前对 built-in tools 仍是基础展示，不包含更细的结构化渲染。
 
-### 2. 本轮优先支持 function tool call
+### 2. 当前优先支持 function tool call
 
 当前 `responses` 归一化逻辑重点覆盖：
 
