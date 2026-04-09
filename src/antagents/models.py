@@ -255,6 +255,17 @@ def get_tool_json_schema(tool: Tool) -> dict:
     }
 
 
+def get_responses_tool_json_schema(tool: Tool) -> dict:
+    chat_schema = get_tool_json_schema(tool)
+    return {
+        "type": "function",
+        "name": chat_schema["function"]["name"],
+        "description": chat_schema["function"]["description"],
+        "parameters": chat_schema["function"]["parameters"],
+        "strict": False,
+    }
+
+
 def remove_stop_sequences(content: str, stop_sequences: list[str]) -> str:
     for stop_seq in stop_sequences:
         if content[-len(stop_seq):] == stop_seq:
@@ -361,10 +372,14 @@ def supports_stop_parameter(model_id: str) -> bool:
     返回:
         bool: 如果模型支持stop参数则返回True，否则返回False
     """
-    model_name = model_id.split("/")[-1]
-    # o3和o4-mini（包括版本变体，如o3-2025-04-16）不支持stop参数
-    pattern = r"^(o3[-\d]*|o4-mini[-\d]*)$"
-    return not re.match(pattern, model_name)
+    return not is_reasoning_model(model_id)
+
+
+def is_reasoning_model(model_id: str | None) -> bool:
+    if not model_id:
+        return False
+    model_name = model_id.split("/")[-1].lower()
+    return bool(re.match(r"^(gpt-5|o[134]|o4-mini)([-\w.]*)$", model_name))
 
 
 class Model:
@@ -650,8 +665,11 @@ class OpenAIServerModel(ApiModel):
         client_kwargs: dict[str, Any] | None = None,
         custom_role_conversions: dict[str, str] | None = None,
         flatten_messages_as_text: bool = False,
+        api_mode: str = "auto",
         **kwargs,
     ):
+        if api_mode not in {"auto", "chat_completions", "responses"}:
+            raise ValueError("api_mode must be one of: auto, chat_completions, responses")
         self.client_kwargs = {
             **(client_kwargs or {}),
             "api_key": api_key,
@@ -659,6 +677,7 @@ class OpenAIServerModel(ApiModel):
             "organization": organization,
             "project": project,
         }
+        self.api_mode = api_mode
         super().__init__(
             model_id=model_id,
             custom_role_conversions=custom_role_conversions,
@@ -676,6 +695,165 @@ class OpenAIServerModel(ApiModel):
 
         return openai.OpenAI(**self.client_kwargs)
 
+    def _uses_responses_api(self) -> bool:
+        if self.api_mode == "responses":
+            return True
+        if self.api_mode == "chat_completions":
+            return False
+        return is_reasoning_model(self.model_id)
+
+    def _normalize_tool_choice_for_chat(self, tools_to_call_from: list[Tool] | None, tool_choice: str | dict | None) -> str | dict | None:
+        if not tools_to_call_from:
+            return None
+        return tool_choice
+
+    def _prepare_chat_completions_kwargs(
+        self,
+        messages: list[ChatMessage | dict],
+        stop_sequences: list[str] | None = None,
+        response_format: dict[str, str] | None = None,
+        tools_to_call_from: list[Tool] | None = None,
+        custom_role_conversions: dict[str, str] | None = None,
+        convert_images_to_image_urls: bool = False,
+        tool_choice: str | dict | None = "required",
+        estimated_output_tokens: int = 1000,
+        **kwargs,
+    ) -> dict[str, Any]:
+        completion_kwargs = self._prepare_completion_kwargs(
+            messages=messages,
+            stop_sequences=stop_sequences,
+            response_format=response_format,
+            tools_to_call_from=tools_to_call_from,
+            custom_role_conversions=custom_role_conversions,
+            convert_images_to_image_urls=convert_images_to_image_urls,
+            tool_choice=self._normalize_tool_choice_for_chat(tools_to_call_from, tool_choice),
+            estimated_output_tokens=estimated_output_tokens,
+            **kwargs,
+        )
+        for msg in completion_kwargs.get("messages", []):
+            if isinstance(msg.get("content"), list) and len(msg["content"]) > 0:
+                first_content = msg["content"][0]
+                if isinstance(first_content, dict) and "text" in first_content:
+                    msg["content"] = first_content["text"]
+        return completion_kwargs
+
+    def _convert_messages_to_responses_input(self, messages: list[ChatMessage | dict]) -> list[dict[str, Any]]:
+        response_input: list[dict[str, Any]] = []
+        cleaned_messages = get_clean_message_list(
+            messages,
+            role_conversions=self.custom_role_conversions or tool_role_conversions,
+            convert_images_to_image_urls=True,
+            flatten_messages_as_text=False,
+        )
+        for message in cleaned_messages:
+            content = message.get("content")
+            if isinstance(content, str):
+                response_input.append({
+                    "role": message["role"],
+                    "content": [{"type": "input_text", "text": content}],
+                })
+                continue
+
+            response_content: list[dict[str, Any]] = []
+            if isinstance(content, list):
+                for part in content:
+                    if part["type"] == "text":
+                        response_content.append({"type": "input_text", "text": part["text"]})
+                    elif part["type"] == "image_url":
+                        response_content.append({"type": "input_image", "image_url": part["image_url"]["url"]})
+            response_input.append({
+                "role": message["role"],
+                "content": response_content,
+            })
+        return response_input
+
+    def _prepare_responses_kwargs(
+        self,
+        messages: list[ChatMessage | dict],
+        response_format: dict[str, str] | None = None,
+        tools_to_call_from: list[Tool] | None = None,
+        estimated_output_tokens: int = 1000,
+        tool_choice: str | dict | None = "required",
+        **kwargs,
+    ) -> dict[str, Any]:
+        response_input = self._convert_messages_to_responses_input(messages)
+        self._check_token_limit(response_input, estimated_output_tokens)
+
+        responses_kwargs: dict[str, Any] = {
+            **self.kwargs,
+            "model": self.model_id,
+            "input": response_input,
+        }
+
+        max_tokens = kwargs.pop("max_tokens", None)
+        if max_tokens is not None:
+            responses_kwargs["max_output_tokens"] = max_tokens
+
+        if response_format is not None:
+            responses_kwargs["text"] = response_format
+
+        if tools_to_call_from:
+            responses_kwargs["tools"] = [get_responses_tool_json_schema(tool) for tool in tools_to_call_from]
+            if tool_choice is not None:
+                responses_kwargs["tool_choice"] = tool_choice
+
+        responses_kwargs.update(kwargs)
+        return responses_kwargs
+
+    def _extract_token_usage_from_response(self, response: Any) -> TokenUsage | None:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return None
+        input_tokens = getattr(usage, "input_tokens", None)
+        output_tokens = getattr(usage, "output_tokens", None)
+        if input_tokens is None:
+            input_tokens = getattr(usage, "prompt_tokens", 0)
+        if output_tokens is None:
+            output_tokens = getattr(usage, "completion_tokens", 0)
+        self._last_input_token_count = input_tokens or 0
+        self._last_output_token_count = output_tokens or 0
+        return TokenUsage(
+            input_tokens=self._last_input_token_count,
+            output_tokens=self._last_output_token_count,
+        )
+
+    def _normalize_chat_completions_response(self, response: Any) -> ChatMessage:
+        token_usage = self._extract_token_usage_from_response(response)
+        return ChatMessage.from_dict(
+            response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
+            raw=response,
+            token_usage=token_usage,
+        )
+
+    def _normalize_responses_response(self, response: Any) -> ChatMessage:
+        content_parts: list[str] = []
+        tool_calls: list[ChatMessageToolCall] = []
+        for output_item in getattr(response, "output", []) or []:
+            item_type = getattr(output_item, "type", None)
+            if item_type == "message":
+                for content_item in getattr(output_item, "content", []) or []:
+                    if getattr(content_item, "type", None) == "output_text":
+                        content_parts.append(getattr(content_item, "text", ""))
+            elif item_type == "function_call":
+                tool_calls.append(
+                    ChatMessageToolCall(
+                        id=getattr(output_item, "call_id", None) or getattr(output_item, "id", str(uuid.uuid4())),
+                        type="function",
+                        function=ChatMessageToolCallFunction(
+                            name=getattr(output_item, "name", ""),
+                            arguments=parse_json_if_needed(getattr(output_item, "arguments", {})),
+                        ),
+                    )
+                )
+
+        return ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content="".join(content_parts) if content_parts else None,
+            tool_calls=tool_calls or None,
+            raw=response,
+            token_usage=self._extract_token_usage_from_response(response),
+        )
+
     def generate_stream(
         self,
         messages: list[ChatMessage | dict],
@@ -684,10 +862,13 @@ class OpenAIServerModel(ApiModel):
         tools_to_call_from: list[Tool] | None = None,
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
+        if self._uses_responses_api():
+            raise NotImplementedError("Streaming for responses API is not implemented yet. Use stream=False for reasoning models.")
+
         # 估算输出token数（基于max_tokens参数）
         estimated_output_tokens = kwargs.get('max_tokens', 1000)
 
-        completion_kwargs = self._prepare_completion_kwargs(
+        completion_kwargs = self._prepare_chat_completions_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
             response_format=response_format,
@@ -698,12 +879,6 @@ class OpenAIServerModel(ApiModel):
             estimated_output_tokens=estimated_output_tokens,
             **kwargs,
         )
-        # print(json.dumps(completion_kwargs, indent=2, ensure_ascii=False))
-        for msg in completion_kwargs.get('messages', []):
-            if isinstance(msg.get('content'), list) and len(msg['content']) > 0:
-                first_content = msg['content'][0]
-                if isinstance(first_content, dict) and 'text' in first_content:
-                    msg['content'] = first_content['text']
         self._apply_rate_limit()
         for event in self.client.chat.completions.create(
             **completion_kwargs, stream=True, stream_options={"include_usage": True}
@@ -750,7 +925,20 @@ class OpenAIServerModel(ApiModel):
         # 估算输出token数（基于max_tokens参数）
         estimated_output_tokens = kwargs.get('max_tokens', 1000)
 
-        completion_kwargs = self._prepare_completion_kwargs(
+        self._apply_rate_limit()
+
+        if self._uses_responses_api():
+            responses_kwargs = self._prepare_responses_kwargs(
+                messages=messages,
+                response_format=response_format,
+                tools_to_call_from=tools_to_call_from,
+                estimated_output_tokens=estimated_output_tokens,
+                **kwargs,
+            )
+            response = self.client.responses.create(**responses_kwargs)
+            return self._normalize_responses_response(response)
+
+        completion_kwargs = self._prepare_chat_completions_kwargs(
             messages=messages,
             stop_sequences=stop_sequences,
             response_format=response_format,
@@ -761,35 +949,8 @@ class OpenAIServerModel(ApiModel):
             estimated_output_tokens=estimated_output_tokens,
             **kwargs,
         )
-        # print("***** Debug [IN] *****\n", json.dumps(completion_kwargs, indent=2, ensure_ascii=False))
-        for msg in completion_kwargs.get('messages', []):
-            if isinstance(msg.get('content'), list) and len(msg['content']) > 0:
-                first_content = msg['content'][0]
-                if isinstance(first_content, dict) and 'text' in first_content:
-                    msg['content'] = first_content['text']
-        self._apply_rate_limit()
         response = self.client.chat.completions.create(**completion_kwargs)
-        # print("***** Debug [OUT] *****\n", response, "\n*****")
-
-        # 据报道，使用OpenRouter时，`response.usage`在某些情况下可能为None：参见GH-1401
-        try:
-            self._last_input_token_count = response.usage.prompt_tokens if response.usage.prompt_tokens else 0
-        except AttributeError:
-            self._last_input_token_count = 0
-
-        try:
-            self._last_output_token_count = response.usage.completion_tokens if response.usage.completion_tokens else 0
-        except AttributeError:
-            self._last_output_token_count = 0
-
-        return ChatMessage.from_dict(
-            response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
-            raw=response,
-            token_usage=TokenUsage(
-                input_tokens=self._last_input_token_count,
-                output_tokens=self._last_output_token_count,
-            ),
-        )
+        return self._normalize_chat_completions_response(response)
 
 
 class GeminiServerModel(ApiModel):

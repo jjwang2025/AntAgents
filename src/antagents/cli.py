@@ -63,6 +63,13 @@ def parse_arguments():
         type=str,
         help="The API key for the model",
     )
+    group.add_argument(
+        "--api-mode",
+        type=str,
+        default="auto",
+        choices=["auto", "chat_completions", "responses"],
+        help="Protocol mode for OpenAI models. 'auto' selects responses for reasoning models.",
+    )
     return parser.parse_args()
 
 
@@ -72,12 +79,14 @@ def load_model(
     api_base: str | None = None,
     api_key: str | None = None,
     provider: str | None = None,
+    api_mode: str = "auto",
 ) -> Model:
     if model_type == "OpenAIServerModel":
         return OpenAIServerModel(
             api_key=api_key or os.getenv("DEEPSEEK_API_KEY"),
             api_base=api_base or os.getenv("DEEPSEEK_URL"),
             model_id=model_id,
+            api_mode=api_mode,
         )
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
@@ -91,11 +100,19 @@ def run_smolagent(
     api_base: str | None = None,
     api_key: str | None = None,
     provider: str | None = None,
+    api_mode: str = "auto",
 ) -> None:
     env_path = os.path.join(os.getcwd(), ".env")
     load_dotenv(env_path)
 
-    model = load_model(model_type, model_id, api_base=api_base, api_key=api_key, provider=provider)
+    model = load_model(
+        model_type,
+        model_id,
+        api_base=api_base,
+        api_key=api_key,
+        provider=provider,
+        api_mode=api_mode,
+    )
 
     available_tools = []
     for tool_name in tools:
@@ -123,6 +140,7 @@ def main() -> None:
         provider=args.provider,
         api_base=args.api_base,
         api_key=args.api_key,
+        api_mode=args.api_mode,
     )
 
 

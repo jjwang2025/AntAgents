@@ -1014,10 +1014,19 @@ class ToolCallingAgent(MultiStepAgent):
             raise AgentGenerationError(f"Error while generating output:\n{e}", self.logger) from e
 
         if chat_message.tool_calls is None or len(chat_message.tool_calls) == 0:
-            try:
-                chat_message = self.model.parse_tool_calls(chat_message)
-            except Exception as e:
-                raise AgentParsingError(f"Error while parsing tool call from model output: {e}", self.logger)
+            content = chat_message.content.strip() if isinstance(chat_message.content, str) else None
+            if content:
+                try:
+                    chat_message = self.model.parse_tool_calls(chat_message)
+                except Exception:
+                    # Reasoning models may return a plain assistant answer without legacy JSON tool-call text.
+                    yield ActionOutput(
+                        output=chat_message.content,
+                        is_final_answer=True,
+                    )
+                    return
+            else:
+                raise AgentParsingError("Model returned neither tool calls nor assistant content.", self.logger)
         else:
             for tool_call in chat_message.tool_calls:
                 tool_call.function.arguments = parse_json_if_needed(tool_call.function.arguments)
