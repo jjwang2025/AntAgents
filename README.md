@@ -16,7 +16,7 @@ If you are using GPT-5 or other reasoning models, see `docs/REASONING_MODEL_COMP
 
 Quick verification scripts:
 
-- `python recipes/e2e_gpt5_tool_call.py`: real GPT-5 end-to-end tool-calling check
+- `python recipes/react_tool_use.py`: textbook multi-step ReAct example with minimal local tools
 - `python recipes/plan_and_execute.py`: textbook planner-executor-synthesizer example
 - `python recipes/test_responses_streaming.py`: local responses streaming compatibility check
 

@@ -160,10 +160,10 @@ python src/antagents/cli.py "测试工具调用" --model-id gpt-5 --api-base <AP
 ### 4. 真实端到端验证脚本
 
 ```bash
-python recipes/e2e_gpt5_tool_call.py
+python recipes/react_tool_use.py
 ```
 
-这个脚本会使用真实 `gpt-5` 跑一个最小闭环：
+这个脚本会使用真实模型跑一个最小 ReAct 闭环：
 
 - 调用本地自定义工具 `double_number`
 - 接收 observation
