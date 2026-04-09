@@ -157,6 +157,28 @@ python src/antagents/cli.py "你好" --model-id deepseek-chat --api-mode chat_co
 python src/antagents/cli.py "测试工具调用" --model-id gpt-5 --api-base <API_BASE> --api-key <API_KEY> --api-mode responses
 ```
 
+### 4. 真实端到端验证脚本
+
+```bash
+python recipes/e2e_gpt5_tool_call.py
+```
+
+这个脚本会使用真实 `gpt-5` 跑一个最小闭环：
+
+- 调用本地自定义工具 `double_number`
+- 接收 observation
+- 再调用 `final_answer`
+
+预期最终输出为 `42`。
+
+### 5. 本地流式兼容测试脚本
+
+```bash
+python recipes/test_responses_streaming.py
+```
+
+这个脚本不调用真实 API，只验证 `responses` 流式事件到内部 `ChatMessageStreamDelta` / `tool_calls` 聚合的兼容性。
+
 ## 验证情况
 
 本次修改后已完成以下验证：
@@ -166,10 +188,12 @@ python src/antagents/cli.py "测试工具调用" --model-id gpt-5 --api-base <AP
 - `deepseek-chat` 会继续走 `chat.completions`
 - `responses` 路径的工具 schema 已按当前 SDK 结构转换
 - 本地 smoke test 已验证 `responses` 响应能归一化为框架内部的 `ChatMessage.tool_calls`
+- 使用真实 `gpt-5` 跑通了端到端工具调用闭环：自定义工具 `double_number` -> observation -> `final_answer`
+- 根据真实返回修正了 `responses` 多轮消息回灌：assistant 历史消息在 `input` 中必须使用 `output_text`，不能继续使用 `input_text`
 
 ## 后续建议
 
 如果继续完善，建议优先做这两项：
 
-1. 为 `responses` 实现流式事件到 `ChatMessageStreamDelta` 的映射
-2. 给 `recipes/helloworld.py`、`recipes/run_model.py` 增加 `api_mode` 示例，方便直接验证 reasoning 模型
+1. 为 built-in tools 增加更细的结构化流式渲染，而不仅是基础文本状态提示
+2. 将更多 `recipes/` 和 `tutorials/` 中的 `OpenAIServerModel` 初始化示例补齐 `api_mode` 使用说明

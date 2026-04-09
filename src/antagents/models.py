@@ -746,11 +746,13 @@ class OpenAIServerModel(ApiModel):
             flatten_messages_as_text=False,
         )
         for message in cleaned_messages:
+            role = message["role"]
+            text_type = "output_text" if role == MessageRole.ASSISTANT else "input_text"
             content = message.get("content")
             if isinstance(content, str):
                 response_input.append({
-                    "role": message["role"],
-                    "content": [{"type": "input_text", "text": content}],
+                    "role": role,
+                    "content": [{"type": text_type, "text": content}],
                 })
                 continue
 
@@ -758,11 +760,11 @@ class OpenAIServerModel(ApiModel):
             if isinstance(content, list):
                 for part in content:
                     if part["type"] == "text":
-                        response_content.append({"type": "input_text", "text": part["text"]})
+                        response_content.append({"type": text_type, "text": part["text"]})
                     elif part["type"] == "image_url":
                         response_content.append({"type": "input_image", "image_url": part["image_url"]["url"]})
             response_input.append({
-                "role": message["role"],
+                "role": role,
                 "content": response_content,
             })
         return response_input
