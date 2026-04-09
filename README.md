@@ -17,7 +17,7 @@ If you are using GPT-5 or other reasoning models, see `docs/REASONING_MODEL_COMP
 Quick verification scripts:
 
 - `python recipes/e2e_gpt5_tool_call.py`: real GPT-5 end-to-end tool-calling check
-- `python recipes/plan_and_execute_gpt5.py`: textbook planner-executor-synthesizer example for GPT-5
+- `python recipes/plan_and_execute.py`: textbook planner-executor-synthesizer example
 - `python recipes/test_responses_streaming.py`: local responses streaming compatibility check
 
 Set `OPENAI_API_MODE=auto` to let GPT-5 / reasoning models use the `responses` API automatically.

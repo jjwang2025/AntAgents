@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""GPT-5 Plan-and-Execute 示例。
+"""Plan-and-Execute 示例。
 
 这个示例实现的是更接近教科书定义的 Plan-and-Execute，而不是单个 ReAct agent
 在执行过程中顺带生成计划。
@@ -51,7 +51,7 @@
 2. Executor 不重新规划，只按既定步骤逐条执行。
 3. Synthesizer 不调用工具，只基于执行结果做最终汇总。
 
-因此，这个示例更适合展示 GPT-5 在“规划 -> 执行 -> 汇总”三阶段中的职责分离。
+因此，这个示例更适合展示兼容 OpenAI 的模型在“规划 -> 执行 -> 汇总”三阶段中的职责分离。
 """
 
 import json
@@ -123,10 +123,10 @@ PLANNER_PROMPT = """你是一个 Plan-and-Execute 系统中的 Planner。
 
 
 def build_model() -> OpenAIServerModel:
-    """构造统一复用的 GPT-5/OpenAI-compatible 模型实例。
+    """构造统一复用的 OpenAI-compatible 模型实例。
 
     示例继续沿用本仓库现有的 `DEEPSEEK_*` 环境变量命名，
-    但当模型 ID 是 GPT-5 / reasoning model 时，`api_mode=auto`
+    但当模型 ID 是 reasoning model 时，`api_mode=auto`
     会自动切到 `responses` 协议。
     """
 
