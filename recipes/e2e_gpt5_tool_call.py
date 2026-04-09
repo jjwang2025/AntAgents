@@ -57,6 +57,9 @@ def main() -> None:
             final_output = event.output
             print(f"\nFINAL_STEP: {final_output}")
 
+    if str(final_output) != "42":
+        raise SystemExit(f"Unexpected E2E result: {final_output!r}")
+
     print("\nE2E result:", final_output)
 
 

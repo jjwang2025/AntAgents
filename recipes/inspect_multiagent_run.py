@@ -11,10 +11,13 @@ from antagents import (
 
 load_dotenv()
 
+api_mode = os.getenv("OPENAI_API_MODE", "auto")
+
 model = OpenAIServerModel(
     model_id=os.getenv("DEEPSEEK_MODEL_ID"),
     api_base=os.getenv("DEEPSEEK_URL"),
-    api_key=os.getenv("DEEPSEEK_API_KEY")
+    api_key=os.getenv("DEEPSEEK_API_KEY"),
+    api_mode=api_mode,
 )
 
 search_agent = ToolCallingAgent(

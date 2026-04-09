@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 # coding=utf-8
 #
-# 重要说明：该脚本需要在 .env 里配置 DEEPSEEK_* 和 BOCHAAI_API_KEY
+# 重要说明：该脚本需要在 .env 里配置 DEEPSEEK_*、BOCHAAI_API_KEY，
+# 对 GPT-5 / reasoning models 建议额外设置 OPENAI_API_MODE=auto。
 #
 
 import os

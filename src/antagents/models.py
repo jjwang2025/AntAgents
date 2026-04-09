@@ -747,13 +747,16 @@ class OpenAIServerModel(ApiModel):
         )
         for message in cleaned_messages:
             role = message["role"]
+            # In the Responses API, prior assistant turns must be replayed as output items.
             text_type = "output_text" if role == MessageRole.ASSISTANT else "input_text"
             content = message.get("content")
             if isinstance(content, str):
-                response_input.append({
-                    "role": role,
-                    "content": [{"type": text_type, "text": content}],
-                })
+                response_input.append(
+                    {
+                        "role": role,
+                        "content": [{"type": text_type, "text": content}],
+                    }
+                )
                 continue
 
             response_content: list[dict[str, Any]] = []
@@ -763,10 +766,12 @@ class OpenAIServerModel(ApiModel):
                         response_content.append({"type": text_type, "text": part["text"]})
                     elif part["type"] == "image_url":
                         response_content.append({"type": "input_image", "image_url": part["image_url"]["url"]})
-            response_input.append({
-                "role": role,
-                "content": response_content,
-            })
+            response_input.append(
+                {
+                    "role": role,
+                    "content": response_content,
+                }
+            )
         return response_input
 
     def _prepare_responses_kwargs(
@@ -911,6 +916,7 @@ class OpenAIServerModel(ApiModel):
                 "mcp_list_tools",
                 "local_shell_call",
             }:
+                # Keep built-in tool progress visible even though the current UI only renders text/tool-calls.
                 item_type = getattr(item, "type", "tool")
                 call_id = getattr(item, "call_id", None) or getattr(item, "id", None) or ""
                 return ChatMessageStreamDelta(content=f"\n[{item_type}] added {call_id}\n")
@@ -945,7 +951,7 @@ class OpenAIServerModel(ApiModel):
         **kwargs,
     ) -> Generator[ChatMessageStreamDelta]:
         if self._uses_responses_api():
-            estimated_output_tokens = kwargs.get('max_tokens', 1000)
+            estimated_output_tokens = kwargs.get("max_tokens", 1000)
             responses_kwargs = self._prepare_responses_kwargs(
                 messages=messages,
                 response_format=response_format,
@@ -962,7 +968,7 @@ class OpenAIServerModel(ApiModel):
             return
 
         # 估算输出token数（基于max_tokens参数）
-        estimated_output_tokens = kwargs.get('max_tokens', 1000)
+        estimated_output_tokens = kwargs.get("max_tokens", 1000)
 
         completion_kwargs = self._prepare_chat_completions_kwargs(
             messages=messages,
@@ -1019,7 +1025,7 @@ class OpenAIServerModel(ApiModel):
         **kwargs,
     ) -> ChatMessage:
         # 估算输出token数（基于max_tokens参数）
-        estimated_output_tokens = kwargs.get('max_tokens', 1000)
+        estimated_output_tokens = kwargs.get("max_tokens", 1000)
 
         self._apply_rate_limit()
 

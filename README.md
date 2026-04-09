@@ -6,7 +6,8 @@ Run the below command line tools to install.
 ```
 git clone https://github.com/jjwang2025/AntAgents.git
 cd AntAgents
-pip install -e .
+python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
 ## Compatibility Notes
@@ -17,5 +18,7 @@ Quick verification scripts:
 
 - `python recipes/e2e_gpt5_tool_call.py`: real GPT-5 end-to-end tool-calling check
 - `python recipes/test_responses_streaming.py`: local responses streaming compatibility check
+
+Set `OPENAI_API_MODE=auto` to let GPT-5 / reasoning models use the `responses` API automatically.
 
 ENJOY IY! 😃

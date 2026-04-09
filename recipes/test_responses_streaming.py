@@ -13,6 +13,7 @@ except ModuleNotFoundError as exc:
         "Missing dependency: rich. Install requirements.txt first, then run this recipe again."
     ) from exc
 
+# Avoid importing antagents.__init__, which eagerly imports optional modules unrelated to this check.
 package_root = Path(__file__).resolve().parents[1] / "src" / "antagents"
 package = types.ModuleType("antagents")
 package.__path__ = [str(package_root)]
@@ -39,13 +40,20 @@ def main() -> None:
 
     events = [
         SimpleNamespace(type="response.reasoning_summary_text.delta", delta="Planning...", item_id="r1", output_index=0),
-        SimpleNamespace(type="response.output_item.added", output_index=1, item=SimpleNamespace(type="function_call", call_id="call_1", id="item_1", name="final_answer")),
+        SimpleNamespace(
+            type="response.output_item.added",
+            output_index=1,
+            item=SimpleNamespace(type="function_call", call_id="call_1", id="item_1", name="final_answer"),
+        ),
         SimpleNamespace(type="response.function_call_arguments.delta", output_index=1, delta='{"answer":"he'),
         SimpleNamespace(type="response.function_call_arguments.delta", output_index=1, delta='llo"}'),
         SimpleNamespace(type="response.output_text.delta", delta="done"),
         SimpleNamespace(type="response.web_search_call.in_progress", item_id="w1", output_index=2),
         SimpleNamespace(type="response.web_search_call.completed", item_id="w1", output_index=2),
-        SimpleNamespace(type="response.completed", response=SimpleNamespace(usage=SimpleNamespace(input_tokens=3, output_tokens=5))),
+        SimpleNamespace(
+            type="response.completed",
+            response=SimpleNamespace(usage=SimpleNamespace(input_tokens=3, output_tokens=5)),
+        ),
     ]
 
     deltas = []

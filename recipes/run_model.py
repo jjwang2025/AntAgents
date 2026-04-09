@@ -6,10 +6,8 @@
 """
 
 import os
-import sys
-from typing import List, Optional, Generator, Dict, Any
-from enum import Enum
-import json
+from typing import List
+
 from dotenv import load_dotenv
 
 from antagents import (
@@ -27,12 +25,12 @@ def create_example_messages() -> List[ChatMessage]:
     return [
         ChatMessage(
             role=MessageRole.SYSTEM,
-            content="你是一个有帮助的AI助手，请用中文回答用户的问题，回答要简洁明了。"
+            content="你是一个有帮助的AI助手，请用中文回答用户的问题，回答要简洁明了。",
         ),
         ChatMessage(
             role=MessageRole.USER,
-            content="请解释一下人工智能的基本概念和应用领域。"
-        )
+            content="请解释一下人工智能的基本概念和应用领域。",
+        ),
     ]
 
 
@@ -45,10 +43,10 @@ def print_messages_detailed(messages: List[ChatMessage]):
         # 角色图标映射
         role_icons = {
             MessageRole.SYSTEM: "⚙️",
-            MessageRole.USER: "👤", 
+            MessageRole.USER: "👤",
             MessageRole.ASSISTANT: "🤖",
             MessageRole.TOOL_CALL: "🛠️",
-            MessageRole.TOOL_RESPONSE: "📋"
+            MessageRole.TOOL_RESPONSE: "📋",
         }
         
         role_emoji = role_icons.get(msg.role, "📝")
@@ -142,19 +140,16 @@ def streaming_example(model: OpenAIServerModel, messages: List[ChatMessage]):
             if delta.token_usage:
                 final_token_usage.input_tokens += delta.token_usage.input_tokens
                 final_token_usage.output_tokens += delta.token_usage.output_tokens
-            
-            # 处理工具调用（如果有）
-            if delta.tool_calls:
-                pass
-        
+
         print("\n" + "-" * 40)
-        
+
         print("\n📊 Token 使用统计:")
         print(f"   📥 输入Token: {final_token_usage.input_tokens}")
         print(f"   📤 输出Token: {final_token_usage.output_tokens}")
         print(f"   📊 总Token: {final_token_usage.input_tokens + final_token_usage.output_tokens}")
-        
+
         # 显示工具调用（如果有）
+        # Streaming tool-call arguments arrive incrementally, so aggregate before printing.
         aggregated = agglomerate_stream_deltas(stream_deltas)
         if aggregated.tool_calls:
             print("\n🛠️  工具调用:")
@@ -178,7 +173,7 @@ def interactive_chat(model: OpenAIServerModel):
     # 系统提示词
     system_message = ChatMessage(
         role=MessageRole.SYSTEM,
-        content="你是一个有帮助的AI助手，请用中文进行友好、专业的对话。"
+        content="你是一个有帮助的AI助手，请用中文进行友好、专业的对话。",
     )
     
     messages = [system_message]
@@ -224,9 +219,9 @@ def interactive_chat(model: OpenAIServerModel):
             # 添加AI回复到消息历史
             if response_content:
                 assistant_message = ChatMessage(
-                    role=MessageRole.ASSISTANT, 
+                    role=MessageRole.ASSISTANT,
                     content=response_content,
-                    token_usage=token_usage
+                    token_usage=token_usage,
                 )
                 messages.append(assistant_message)
                 
@@ -247,7 +242,7 @@ def main():
     """主函数"""
     print("🤖 大模型调用示例程序")
     print("=" * 60)
-    
+
     # 初始化模型
     try:
         api_mode = os.getenv("OPENAI_API_MODE", "auto")
@@ -296,5 +291,5 @@ def main():
 
 if __name__ == "__main__":
     load_dotenv(override=True)
-    
+
     main()

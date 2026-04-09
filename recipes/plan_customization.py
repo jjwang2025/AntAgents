@@ -107,10 +107,12 @@ def main():
     print("=" * 60)
 
     # 创建启用了计划和步骤回调的智能体
+    api_mode = os.getenv("OPENAI_API_MODE", "auto")
     model = OpenAIServerModel(
         model_id=os.getenv("DEEPSEEK_MODEL_ID"),
         api_base=os.getenv("DEEPSEEK_URL"),
-        api_key=os.getenv("DEEPSEEK_API_KEY")
+        api_key=os.getenv("DEEPSEEK_API_KEY"),
+        api_mode=api_mode,
     )
     tools = [WebSearchTool()]
     agent = ToolCallingAgent(model=model,
