@@ -73,6 +73,29 @@ from .utils import (
 logger = getLogger(__name__)
 
 
+def _load_toolcalling_prompt_templates(model: Model) -> PromptTemplates:
+    """Load the prompt template variant that matches the model's tool-calling protocol.
+
+    Responses/reasoning models already receive a structured `tools` payload from the API,
+    so they only need a lighter behavioral prompt. Older chat-completions paths keep the
+    more compatible template to preserve current behavior across OpenAI-compatible backends.
+    """
+
+    prompt_file = "toolcalling_agent_compat.yaml"
+    if hasattr(model, "_uses_responses_api") and callable(model._uses_responses_api):
+        try:
+            if model._uses_responses_api():
+                prompt_file = "toolcalling_agent_responses.yaml"
+        except Exception:
+            prompt_file = "toolcalling_agent_compat.yaml"
+
+    return yaml.safe_load(
+        importlib.resources.files("antagents.prompts")
+        .joinpath(prompt_file)
+        .read_text(encoding="utf-8")
+    )
+
+
 def get_variable_names(self, template: str) -> set[str]:
     pattern = re.compile(r"\{\{([^{}]+)\}\}")
     return {match.group(1).strip() for match in pattern.finditer(template)}
@@ -914,11 +937,7 @@ class ToolCallingAgent(MultiStepAgent):
         max_tool_threads: int | None = None,
         **kwargs,
     ):
-        prompt_templates = prompt_templates or yaml.safe_load(
-            importlib.resources.files("antagents.prompts")
-            .joinpath("toolcalling_agent.yaml")
-            .read_text(encoding='utf-8')
-        )
+        prompt_templates = prompt_templates or _load_toolcalling_prompt_templates(model)
         super().__init__(
             tools=tools,
             model=model,
