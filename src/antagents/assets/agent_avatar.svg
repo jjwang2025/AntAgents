@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="20" y1="14" x2="138" y2="146" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1D4ED8"/>
+      <stop offset="0.55" stop-color="#0F766E"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(52 36) rotate(48) scale(92 78)">
+      <stop stop-color="#93C5FD" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#93C5FD" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="shell" x1="42" y1="36" x2="116" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#CBD5E1"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="54" y1="52" x2="106" y2="100" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="1" stop-color="#1E293B"/>
+    </linearGradient>
+    <linearGradient id="mouth" x1="62" y1="102" x2="98" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#38BDF8"/>
+    </linearGradient>
+    <filter id="shadow" x="14" y="12" width="132" height="136" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="8"/>
+      <feGaussianBlur stdDeviation="10"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0588235 0 0 0 0 0.0941176 0 0 0 0 0.164706 0 0 0 0.32 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect x="12" y="12" width="136" height="136" rx="40" fill="url(#bg)"/>
+  <rect x="12" y="12" width="136" height="136" rx="40" fill="url(#glow)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="40" y="34" width="80" height="92" rx="28" fill="url(#shell)"/>
+    <rect x="52" y="48" width="56" height="44" rx="18" fill="url(#panel)"/>
+
+    <path d="M59 18C59 14.6863 61.6863 12 65 12C68.3137 12 71 14.6863 71 18V36H59V18Z" fill="#BFDBFE"/>
+    <path d="M89 18C89 14.6863 91.6863 12 95 12C98.3137 12 101 14.6863 101 18V36H89V18Z" fill="#BFDBFE"/>
+    <circle cx="65" cy="16" r="5" fill="#E0F2FE"/>
+    <circle cx="95" cy="16" r="5" fill="#E0F2FE"/>
+
+    <ellipse cx="66" cy="69" rx="9" ry="10" fill="#38BDF8"/>
+    <ellipse cx="94" cy="69" rx="9" ry="10" fill="#38BDF8"/>
+    <ellipse cx="63" cy="66" rx="3" ry="3.5" fill="#E0F2FE"/>
+    <ellipse cx="91" cy="66" rx="3" ry="3.5" fill="#E0F2FE"/>
+
+    <rect x="62" y="101" width="36" height="12" rx="6" fill="url(#mouth)"/>
+    <rect x="50" y="126" width="60" height="10" rx="5" fill="#93C5FD" fill-opacity="0.38"/>
+    <path d="M31 56C36 48 45 43 54 42" stroke="#93C5FD" stroke-width="6" stroke-linecap="round"/>
+    <path d="M129 56C124 48 115 43 106 42" stroke="#93C5FD" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>
