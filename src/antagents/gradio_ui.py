@@ -4,6 +4,7 @@
 import os
 import re
 import shutil
+import html
 import importlib.resources
 from pathlib import Path
 from typing import Generator
@@ -95,7 +96,7 @@ html, body {
 
 #chat-composer-input:focus-within {
   border-color: rgba(37, 99, 235, 0.65) !important;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.10);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04) !important;
 }
 
 #chat-composer-input textarea:focus {
@@ -148,6 +149,17 @@ CHAT_UI_HEAD = """
     panel.scrollTop = panel.scrollHeight;
   }
 
+  function bindChatScrollObserver() {
+    const panel = document.querySelector('#chatbot-panel');
+    if (!panel || panel.dataset.antagentsScrollBound === '1') return;
+    panel.dataset.antagentsScrollBound = '1';
+
+    const observer = new MutationObserver(() => {
+      requestAnimationFrame(scrollChatToBottom);
+    });
+    observer.observe(panel, { childList: true, subtree: true, characterData: true });
+  }
+
   function bindComposerEnter() {
     const textarea = document.querySelector('#chat-composer-input textarea');
     if (!textarea || textarea.dataset.antagentsBound === '1') return;
@@ -159,11 +171,12 @@ CHAT_UI_HEAD = """
   }
 
   document.addEventListener('DOMContentLoaded', bindComposerEnter);
+  document.addEventListener('DOMContentLoaded', bindChatScrollObserver);
   document.addEventListener('DOMContentLoaded', scrollChatToBottom);
   const observer = new MutationObserver(bindComposerEnter);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  const scrollObserver = new MutationObserver(scrollChatToBottom);
-  scrollObserver.observe(document.documentElement, { childList: true, subtree: true });
+  const chatObserver = new MutationObserver(bindChatScrollObserver);
+  chatObserver.observe(document.documentElement, { childList: true, subtree: true });
 })();
 </script>
 """
@@ -195,14 +208,101 @@ def _format_builtin_event(event: BuiltinToolEventStreamDelta) -> str:
     )
 
 
-def _render_card(title: str, body: str, accent: str, subtitle: str | None = None) -> str:
+def _simple_markdown_to_html(text: str) -> str:
+    """Render a small Markdown subset for Gradio card bodies.
+
+    This keeps planning headers, lists, code fences and inline emphasis readable
+    inside HTML cards without pulling in an extra markdown runtime dependency.
+    """
+    if not text.strip():
+        return ""
+
+    blocks: list[str] = []
+    current_list: list[str] = []
+    in_code_block = False
+    code_lines: list[str] = []
+
+    def flush_list() -> None:
+        nonlocal current_list
+        if current_list:
+            blocks.append("<ul>" + "".join(f"<li>{item}</li>" for item in current_list) + "</ul>")
+            current_list = []
+
+    def render_inline(value: str) -> str:
+        escaped = html.escape(value)
+        escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+        escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+        return escaped
+
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+
+        if stripped.startswith("```"):
+            if in_code_block:
+                blocks.append(f"<pre><code>{html.escape(chr(10).join(code_lines))}</code></pre>")
+                code_lines = []
+                in_code_block = False
+            else:
+                flush_list()
+                in_code_block = True
+            continue
+
+        if in_code_block:
+            code_lines.append(raw_line)
+            continue
+
+        if not stripped:
+            flush_list()
+            continue
+
+        if stripped.startswith("### "):
+            flush_list()
+            blocks.append(f"<h3>{render_inline(stripped[4:])}</h3>")
+            continue
+        if stripped.startswith("## "):
+            flush_list()
+            blocks.append(f"<h2>{render_inline(stripped[3:])}</h2>")
+            continue
+        if stripped.startswith("# "):
+            flush_list()
+            blocks.append(f"<h1>{render_inline(stripped[2:])}</h1>")
+            continue
+        if stripped.startswith(("- ", "* ")):
+            current_list.append(render_inline(stripped[2:]))
+            continue
+
+        flush_list()
+        blocks.append(f"<p>{render_inline(stripped)}</p>")
+
+    flush_list()
+    if in_code_block:
+        blocks.append(f"<pre><code>{html.escape(chr(10).join(code_lines))}</code></pre>")
+
+    return "".join(blocks)
+
+
+def _sanitize_streaming_text(text: str) -> str:
+    """Remove runtime/system artifacts that should never surface in the chat UI."""
+    cleaned = re.sub(r"<system-reminder\b[^>]*>.*?</system-reminder>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(
+        r"Your operational mode has changed from .*?You are permitted to .*?(?=(\n\n|$))",
+        "",
+        cleaned,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    return cleaned.strip()
+
+
+def _render_card(title: str, body: str, accent: str, subtitle: str | None = None, body_is_html: bool = False) -> str:
     subtitle_html = f"<div style='font-size:12px;color:#94a3b8;margin-top:2px;'>{subtitle}</div>" if subtitle else ""
+    rendered_body = body if body_is_html else _simple_markdown_to_html(body)
     return (
-        f"<div style='border:1px solid {accent}33; border-left:4px solid {accent}; border-radius:16px; "
+        f"<div style='width:680px; max-width:100%; box-sizing:border-box; border:1px solid {accent}33; border-left:4px solid {accent}; border-radius:16px; "
         "padding:14px 16px; background:rgba(255,255,255,0.92); box-shadow:0 6px 16px rgba(15,23,42,0.05);'>"
         f"<div style='font-size:12px; letter-spacing:0.04em; text-transform:uppercase; color:{accent}; font-weight:700;'>{title}</div>"
         f"{subtitle_html}"
-        f"<div style='margin-top:10px;'>{body}</div>"
+        f"<div style='margin-top:10px;'>{rendered_body}</div>"
         "</div>"
     )
 
@@ -211,10 +311,15 @@ def _highlight_final_answer(text: str) -> str:
     return _render_card("Final Answer", text, "#0ea5e9", subtitle="最终输出")
 
 
+def _render_streaming_reply(text: str, body_is_html: bool = False) -> str:
+    return _render_card("Assistant", text, "#64748b", subtitle="流式回复", body_is_html=body_is_html)
+
+
 def _format_streaming_markdown(text: str) -> str:
+    text = _sanitize_streaming_text(text)
     if not text.strip():
-        return "<div style='color:#94a3b8;'>正在思考...</div>"
-    return text
+        return _render_streaming_reply("正在思考...")
+    return _render_streaming_reply(text)
 
 
 def _clean_model_output(model_output: str) -> str:
@@ -568,7 +673,7 @@ class GradioUI:
             messages.append(
                 gr.ChatMessage(
                     role=MessageRole.ASSISTANT,
-                    content="<div style='color:#94a3b8;'>正在思考...</div>",
+                    content=_render_streaming_reply("正在思考..."),
                     metadata={"status": "pending", "title": "智能体", "id": "streaming-reply"},
                 )
             )
@@ -579,10 +684,10 @@ class GradioUI:
             ):
                 if isinstance(msg, gr.ChatMessage):
                     if messages and messages[-1].metadata.get("id") == "streaming-reply":
-                        messages[-1].metadata["status"] = "done"
+                        messages.pop()
                     messages.append(msg)
                 elif isinstance(msg, str):  # 那么它只是一个完成增量
-                    msg = msg.replace("<", r"\<").replace(">", r"\>")  # HTML标签似乎会破坏Gradio Chatbot
+                    # Keep Markdown formatting for the streaming card instead of escaping it into plain text.
                     msg = _format_streaming_markdown(msg)
                     if messages[-1].metadata.get("id") == "streaming-reply":
                         messages[-1].content = msg
@@ -596,8 +701,6 @@ class GradioUI:
                         )
                 yield messages
 
-            if messages and messages[-1].metadata.get("id") == "streaming-reply":
-                messages[-1].metadata["status"] = "done"
             yield messages
         except Exception as e:
             yield messages

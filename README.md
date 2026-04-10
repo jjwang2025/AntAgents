@@ -107,9 +107,7 @@ python recipes/gradio_ui.py
 
 ## 文档
 
-- `AGENTS.md`：给 OpenCode / 代码智能体的仓库注意事项
 - `docs/REASONING_MODEL_COMPAT.md`：GPT-5 / reasoning models 兼容说明
-- `docs/ROADMAP.md`：后续功能提升计划
 
 ## 当前特性
 
