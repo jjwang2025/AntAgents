@@ -19,6 +19,18 @@ from antagents.utils import _is_package_available, decode_unicode_escapes
 CHAT_UI_CSS = """
 html, body {
   overflow: hidden;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+.gradio-container,
+.gradio-container > .main,
+.gradio-container .app,
+#chat-main {
+  overflow: hidden !important;
 }
 
 #chat-main {
@@ -29,19 +41,12 @@ html, body {
   min-height: 0;
 }
 
-#chat-main .wrap {
-  max-width: 980px;
-  margin: 0 auto;
-  width: 100%;
-}
-
 #chatbot-panel {
   flex: 1 1 auto;
   min-height: 0;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 18px;
-  background: #ffffff;
-  overflow: hidden;
+  height: 100% !important;
+  max-height: none !important;
+  overflow: hidden !important;
 }
 
 #chat-composer-panel {
@@ -143,23 +148,6 @@ CHAT_UI_HEAD = """
     textarea.style.height = Math.min(textarea.scrollHeight, 180) + 'px';
   }
 
-  function scrollChatToBottom() {
-    const panel = document.querySelector('#chatbot-panel');
-    if (!panel) return;
-    panel.scrollTop = panel.scrollHeight;
-  }
-
-  function bindChatScrollObserver() {
-    const panel = document.querySelector('#chatbot-panel');
-    if (!panel || panel.dataset.antagentsScrollBound === '1') return;
-    panel.dataset.antagentsScrollBound = '1';
-
-    const observer = new MutationObserver(() => {
-      requestAnimationFrame(scrollChatToBottom);
-    });
-    observer.observe(panel, { childList: true, subtree: true, characterData: true });
-  }
-
   function bindComposerEnter() {
     const textarea = document.querySelector('#chat-composer-input textarea');
     if (!textarea || textarea.dataset.antagentsBound === '1') return;
@@ -171,12 +159,8 @@ CHAT_UI_HEAD = """
   }
 
   document.addEventListener('DOMContentLoaded', bindComposerEnter);
-  document.addEventListener('DOMContentLoaded', bindChatScrollObserver);
-  document.addEventListener('DOMContentLoaded', scrollChatToBottom);
   const observer = new MutationObserver(bindComposerEnter);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  const chatObserver = new MutationObserver(bindChatScrollObserver);
-  chatObserver.observe(document.documentElement, { childList: true, subtree: true });
 })();
 </script>
 """
@@ -282,21 +266,26 @@ def _simple_markdown_to_html(text: str) -> str:
     return "".join(blocks)
 
 
-def _sanitize_streaming_text(text: str) -> str:
-    """Remove runtime/system artifacts that should never surface in the chat UI."""
-    cleaned = re.sub(r"<system-reminder\b[^>]*>.*?</system-reminder>", "", text, flags=re.DOTALL | re.IGNORECASE)
+def _sanitize_ui_text(text: str) -> str:
+    """Remove runtime/system artifacts that should never surface in the Gradio chat UI."""
+    cleaned = text
+    cleaned = re.sub(r"<system-reminder\b[^>]*>.*?(?:</system-reminder>|$)", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(r"</system-reminder>", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"Your operational mode has changed from .*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"You are no longer in read-only mode\.", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(
-        r"Your operational mode has changed from .*?You are permitted to .*?(?=(\n\n|$))",
+        r"You are permitted to make file changes, run shell commands, and utilize your arsenal of tools as needed\.",
         "",
         cleaned,
-        flags=re.DOTALL | re.IGNORECASE,
+        flags=re.IGNORECASE,
     )
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
 def _render_card(title: str, body: str, accent: str, subtitle: str | None = None, body_is_html: bool = False) -> str:
     subtitle_html = f"<div style='font-size:12px;color:#94a3b8;margin-top:2px;'>{subtitle}</div>" if subtitle else ""
-    rendered_body = body if body_is_html else _simple_markdown_to_html(body)
+    rendered_body = body if body_is_html else _simple_markdown_to_html(_sanitize_ui_text(body))
     return (
         f"<div style='width:680px; max-width:100%; box-sizing:border-box; border:1px solid {accent}33; border-left:4px solid {accent}; border-radius:16px; "
         "padding:14px 16px; background:rgba(255,255,255,0.92); box-shadow:0 6px 16px rgba(15,23,42,0.05);'>"
@@ -318,13 +307,15 @@ def _format_tool_list_markdown(items: list[tuple[str, str]]) -> str:
 
 
 def _render_streaming_reply(text: str, body_is_html: bool = False) -> str:
-    return _render_card("Assistant", text, "#64748b", subtitle="流式回复", body_is_html=body_is_html)
+    if body_is_html:
+        return text
+    return _sanitize_ui_text(text)
 
 
 def _format_streaming_markdown(text: str) -> str:
-    text = _sanitize_streaming_text(text)
+    text = _sanitize_ui_text(text)
     if not text.strip():
-        return _render_streaming_reply("正在思考...")
+        return ""
     return _render_streaming_reply(text)
 
 
@@ -345,7 +336,7 @@ def _clean_model_output(model_output: str) -> str:
     model_output = re.sub(r"```\s*<end_code>", "```", model_output)  # 处理```<end_code>
     model_output = re.sub(r"<end_code>\s*```", "```", model_output)  # 处理<end_code>```
     model_output = re.sub(r"```\s*\n\s*<end_code>", "```", model_output)  # 处理```\n<end_code>
-    return model_output.strip()
+    return _sanitize_ui_text(model_output.strip())
 
 
 def _format_code_content(content: str) -> str:
@@ -683,40 +674,50 @@ class GradioUI:
     def interact_with_agent(self, prompt, messages, session_state):
         import gradio as gr
 
+        def _message_metadata(message):
+            if isinstance(message, dict):
+                return message.get("metadata", {}) or {}
+            return getattr(message, "metadata", {}) or {}
+
+        def _set_message_content(message, content):
+            if isinstance(message, dict):
+                message["content"] = content
+            else:
+                message.content = content
+
         # 从模板智能体获取智能体类型
         if "agent" not in session_state:
             session_state["agent"] = self.agent
 
         try:
-            messages.append(
-                gr.ChatMessage(
-                    role=MessageRole.ASSISTANT,
-                    content=_render_streaming_reply("正在思考..."),
-                    metadata={"status": "pending", "title": "智能体", "id": "streaming-reply"},
-                )
-            )
-            yield messages
+            messages = [msg for msg in messages if _message_metadata(msg).get("id") != "streaming-reply"]
+            streaming_index = None
 
             for msg in stream_to_gradio(
                 session_state["agent"], task=prompt, reset_agent_memory=self.reset_agent_memory
             ):
                 if isinstance(msg, gr.ChatMessage):
-                    if messages and messages[-1].metadata.get("id") == "streaming-reply":
-                        messages.pop()
+                    if streaming_index is not None and streaming_index < len(messages):
+                        messages.pop(streaming_index)
+                        streaming_index = None
                     messages.append(msg)
                 elif isinstance(msg, str):  # 那么它只是一个完成增量
+                    if msg.strip() in {"...", "…", "正在思考...", "正在思考…"}:
+                        continue
                     # Keep Markdown formatting for the streaming card instead of escaping it into plain text.
                     msg = _format_streaming_markdown(msg)
-                    if messages[-1].metadata.get("id") == "streaming-reply":
-                        messages[-1].content = msg
+                    if not msg.strip():
+                        continue
+                    if streaming_index is not None and streaming_index < len(messages):
+                        _set_message_content(messages[streaming_index], msg)
                     else:
                         messages.append(
                             gr.ChatMessage(
                                 role=MessageRole.ASSISTANT,
                                 content=msg,
-                                metadata={"status": "pending", "title": "智能体", "id": "streaming-reply"},
                             )
                         )
+                        streaming_index = len(messages) - 1
                 yield messages
 
             yield messages
@@ -860,11 +861,13 @@ class GradioUI:
                     label="智能体轨迹",
                     type="messages",
                     avatar_images=(None, agent_avatar_path),
-                    resizeable=True,
+                    container=False,
+                    resizeable=False,
                     scale=1,
                     bubble_full_width=False,
                     show_copy_button=True,
-                    height=720,
+                    autoscroll=True,
+                    height="100%",
                     elem_id="chatbot-panel",
                     latex_delimiters=[
                         {"left": r"$$", "right": r"$$", "display": True},
