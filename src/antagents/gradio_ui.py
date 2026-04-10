@@ -662,7 +662,7 @@ class GradioUI:
         self.agent = agent
         self.file_upload_folder = Path(file_upload_folder) if file_upload_folder is not None else None
         self.reset_agent_memory = reset_agent_memory
-        self.name = getattr(agent, "name") or "Agent interface"
+        self.name = getattr(agent, "display_name", None) or getattr(agent, "name") or "Agent interface"
         self.description = getattr(agent, "description", None)
         if self.file_upload_folder is not None:
             if not self.file_upload_folder.exists():
@@ -821,6 +821,21 @@ class GradioUI:
                     f"# {self.name.replace('_', ' ').capitalize()}"
                     "\n> 在这里可以直接体验工具调用、规划步骤、流式输出，以及 responses 内建工具事件展示。"
                     + (f"\n\n**智能体描述**\n{self.description}" if self.description else "")
+                )
+
+                gr.Markdown(
+                    "**如何使用多智能体编排**\n"
+                    "- AntAgents 总控台负责理解任务、拆分步骤，并决定何时调用家族成员。\n"
+                    "- 侦察蚁负责网页搜索和页面访问，适合处理需要查资料、比对网页、汇总来源的问题。\n"
+                    "- 适合直接输入较完整的任务目标，而不是只输入一个关键词。\n\n"
+                    "**推荐提问方式**\n"
+                    "- 先说明目标，再说明你希望它如何组织信息。\n"
+                    "- 如果需要联网检索，直接写清楚“请先搜索并给出结论”。\n"
+                    "- 如果需要多步处理，明确写出“先查资料，再比较，最后总结”。\n\n"
+                    "**示例任务**\n"
+                    "- 请先搜索 OpenAI 最新的 GPT-5 公开说明，再总结它和 GPT-4o 的主要差异。\n"
+                    "- 请搜索 2024 年中国 GDP 增速相关数据，说明如果保持该增速，GDP 大约多少年翻倍。\n"
+                    "- 请先搜索某个产品的官网和文档页面，再整理一个简短的功能对比表。"
                 )
 
                 gr.Markdown("**可用工具**\n" + _format_tool_list_markdown(self._available_tools_for_display()))

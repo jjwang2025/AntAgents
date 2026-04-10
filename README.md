@@ -81,6 +81,7 @@ python recipes/gradio_ui.py
 
 特点：
 - 图形化展示智能体步骤轨迹
+- 支持多智能体编排演示
 - 当前支持规划步骤、工具调用、执行日志、最终答案
 - 对 `responses` built-in tool 事件做了更清晰的展示
 

@@ -6,10 +6,10 @@
 #
 
 import os
+
 from dotenv import load_dotenv
 
-from antagents import OpenAIServerModel, ToolCallingAgent, WebSearchTool
-from antagents import GradioUI
+from antagents import GradioUI, OpenAIServerModel, ToolCallingAgent, VisitWebpageTool, WebSearchTool
 
 load_dotenv()
 
@@ -22,15 +22,27 @@ model = OpenAIServerModel(
     api_mode=api_mode,
 )
 
+search_agent = ToolCallingAgent(
+    tools=[WebSearchTool(), VisitWebpageTool()],
+    model=model,
+    verbosity_level=1,
+    # Managed agent names are exposed as tool names, so they must stay ASCII-safe.
+    name="scout_ant",
+    description="侦察蚁：负责网页搜索与网页访问的检索子智能体。",
+    return_full_result=True,
+)
+
 agent = ToolCallingAgent(
-    tools=[WebSearchTool()],
+    tools=[],
+    managed_agents=[search_agent],
     model=model,
     verbosity_level=1,
     planning_interval=3,
-    name="HelloAgent",
-    description="This is an example AntAgent.",
+    name="antagents_console",
+    description="多智能体编排演示：AntAgents 总控台负责规划与汇总，侦察蚁负责搜索与页面访问。",
     step_callbacks=[],
     stream_outputs=True,
 )
+agent.display_name = "AntAgents 总控台"
 
 GradioUI(agent, file_upload_folder="./data").launch()
