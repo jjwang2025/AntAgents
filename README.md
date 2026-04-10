@@ -76,7 +76,7 @@ python recipes/run_model.py
 ### 5. Gradio UI 示例
 
 ```bash
-python recipes/gradio_ui.py
+python recipes/gradio_multiagent_demo.py
 ```
 
 特点：
@@ -103,7 +103,7 @@ python recipes/gradio_ui.py
 - `recipes/react_tool_use.py`：ReAct
 - `recipes/plan_and_execute.py`：Plan-and-Execute
 - `recipes/run_model.py`：模型基础调用
-- `recipes/gradio_ui.py`：Web UI 交互
+- `recipes/gradio_multiagent_demo.py`：多智能体 Web UI 演示
 - `recipes/test_responses_streaming.py`：协议兼容测试
 
 ## 文档
