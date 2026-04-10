@@ -311,6 +311,12 @@ def _highlight_final_answer(text: str) -> str:
     return _render_card("Final Answer", text, "#0ea5e9", subtitle="最终输出")
 
 
+def _format_tool_list_markdown(items: list[tuple[str, str]]) -> str:
+    if not items:
+        return "- 无"
+    return "\n".join([f"- `{name}`: {description}" if description else f"- `{name}`" for name, description in items])
+
+
 def _render_streaming_reply(text: str, body_is_html: bool = False) -> str:
     return _render_card("Assistant", text, "#64748b", subtitle="流式回复", body_is_html=body_is_html)
 
@@ -662,6 +668,18 @@ class GradioUI:
             if not self.file_upload_folder.exists():
                 self.file_upload_folder.mkdir(parents=True, exist_ok=True)
 
+    def _available_tools_for_display(self) -> list[tuple[str, str]]:
+        tools = getattr(self.agent, "tools", {}) or {}
+        return [(name, getattr(tool, "description", "")) for name, tool in tools.items()]
+
+    def _selected_tools_for_display(self) -> list[tuple[str, str]]:
+        if hasattr(self.agent, "tools_and_managed_agents"):
+            return [
+                (getattr(tool, "name", str(tool)), getattr(tool, "description", ""))
+                for tool in self.agent.tools_and_managed_agents
+            ]
+        return self._available_tools_for_display()
+
     def interact_with_agent(self, prompt, messages, session_state):
         import gradio as gr
 
@@ -804,6 +822,9 @@ class GradioUI:
                     "\n> 在这里可以直接体验工具调用、规划步骤、流式输出，以及 responses 内建工具事件展示。"
                     + (f"\n\n**智能体描述**\n{self.description}" if self.description else "")
                 )
+
+                gr.Markdown("**可用工具**\n" + _format_tool_list_markdown(self._available_tools_for_display()))
+                gr.Markdown("**当前启用工具**\n" + _format_tool_list_markdown(self._selected_tools_for_display()))
 
                 # 如果提供了上传文件夹，则启用上传功能
                 if self.file_upload_folder is not None:
