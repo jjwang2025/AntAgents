@@ -73,7 +73,7 @@ from .utils import (
 logger = getLogger(__name__)
 
 
-def _load_toolcalling_prompt_templates(model: Model) -> PromptTemplates:
+def _load_toolcalling_prompt_templates(model: Model) -> "PromptTemplates":
     """Load the prompt template variant that matches the model's tool-calling protocol.
 
     Responses/reasoning models already receive a structured `tools` payload from the API,
