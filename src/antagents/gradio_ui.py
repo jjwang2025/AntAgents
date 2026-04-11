@@ -136,6 +136,39 @@ body {
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
   white-space: nowrap;
 }
+
+#chat-run-status {
+  margin: 0 4px 8px 4px;
+}
+
+#chat-run-status .chat-run-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.96);
+  color: #1d4ed8;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+#chat-run-status .chat-run-status-pill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #3b82f6;
+  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.45);
+  animation: antagents-status-pulse 1.6s infinite;
+}
+
+@keyframes antagents-status-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.45); }
+  70% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
 """
 
 
@@ -738,7 +771,7 @@ class GradioUI:
             )
 
         if not prompt:
-            return messages, "", gr.Button(interactive=True), gr.Textbox(interactive=True), ""
+            return messages, "", gr.Button(interactive=True), gr.Textbox(interactive=True), "", gr.HTML(visible=False)
 
         updated_messages = list(messages)
         updated_messages.append(gr.ChatMessage(role="user", content=prompt, metadata={"status": "done"}))
@@ -748,6 +781,7 @@ class GradioUI:
             gr.Button(interactive=False),
             gr.Textbox(interactive=False),
             prompt,
+            gr.HTML("<div class='chat-run-status-pill'>正在调用工具并生成结果...</div>", visible=True),
         )
 
     def restore_input_state(self):
@@ -756,6 +790,7 @@ class GradioUI:
         return (
             gr.Textbox(interactive=True, placeholder="给智能体下达任务，Enter 发送，Shift+Enter 换行"),
             gr.Button(interactive=True),
+            gr.HTML(visible=False),
         )
 
     def upload_file(self, file, file_uploads_log, allowed_file_types=None):
@@ -878,6 +913,7 @@ class GradioUI:
                 )
 
                 with gr.Group(elem_id="chat-composer-panel"):
+                    run_status = gr.HTML(visible=False, elem_id="chat-run-status")
                     gr.HTML("<div id='composer-inline-hint'><span>Enter 发送 · Shift+Enter 换行</span></div>")
                     with gr.Row(equal_height=False, elem_id="chat-composer-row"):
                         text_input = gr.Textbox(
@@ -896,21 +932,21 @@ class GradioUI:
             submit_btn.click(
                 self.submit_user_message,
                 [text_input, chatbot, file_uploads_log],
-                [chatbot, text_input, submit_btn, text_input, stored_messages],
+                [chatbot, text_input, submit_btn, text_input, stored_messages, run_status],
             ).then(self.interact_with_agent, [stored_messages, chatbot, session_state], [chatbot]).then(
                 self.restore_input_state,
                 None,
-                [text_input, submit_btn],
+                [text_input, submit_btn, run_status],
             )
 
             text_input.submit(
                 self.submit_user_message,
                 [text_input, chatbot, file_uploads_log],
-                [chatbot, text_input, submit_btn, text_input, stored_messages],
+                [chatbot, text_input, submit_btn, text_input, stored_messages, run_status],
             ).then(self.interact_with_agent, [stored_messages, chatbot, session_state], [chatbot]).then(
                 self.restore_input_state,
                 None,
-                [text_input, submit_btn],
+                [text_input, submit_btn, run_status],
             )
 
             chatbot.clear(self.agent.memory.reset)
