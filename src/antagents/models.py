@@ -98,6 +98,7 @@ class MessageRole(str, Enum):
 class ChatMessage:
     role: MessageRole
     content: str | list[dict[str, Any]] | None = None
+    reasoning_content: str | None = None
     tool_calls: list[ChatMessageToolCall] | None = None
     raw: Any | None = None  # 存储来自API的原始输出
     token_usage: TokenUsage | None = None
@@ -118,6 +119,7 @@ class ChatMessage:
         return cls(
             role=data["role"],
             content=data.get("content"),
+            reasoning_content=data.get("reasoning_content"),
             tool_calls=data.get("tool_calls"),
             raw=raw,
             token_usage=token_usage,
@@ -126,8 +128,11 @@ class ChatMessage:
     def dict(self):
         return get_dict_from_nested_dataclasses(self)
 
-    def render_as_markdown(self) -> str:
-        rendered = str(self.content) or ""
+    def render_as_markdown(self, include_reasoning: bool = True) -> str:
+        rendered = ""
+        if include_reasoning and self.reasoning_content:
+            rendered += f"思考过程:\n{self.reasoning_content}\n\n"
+        rendered += str(self.content) or ""
         if self.tool_calls:
             rendered += "\n".join(
                 [
@@ -161,6 +166,7 @@ class ChatMessageToolCallStreamDelta:
 @dataclass
 class ChatMessageStreamDelta:
     content: str | None = None
+    reasoning_content: str | None = None
     tool_calls: list[ChatMessageToolCallStreamDelta] | None = None
     builtin_tool_events: list["BuiltinToolEventStreamDelta"] | None = None
     token_usage: TokenUsage | None = None
@@ -183,6 +189,7 @@ def agglomerate_stream_deltas(
     """
     accumulated_tool_calls: dict[int, ChatMessageToolCallStreamDelta] = {}
     accumulated_content = ""
+    accumulated_reasoning = ""
     total_input_tokens = 0
     total_output_tokens = 0
     builtin_status_lines: list[str] = []
@@ -192,6 +199,8 @@ def agglomerate_stream_deltas(
             total_output_tokens += stream_delta.token_usage.output_tokens
         if stream_delta.content:
             accumulated_content += stream_delta.content
+        if stream_delta.reasoning_content:
+            accumulated_reasoning += stream_delta.reasoning_content
         if stream_delta.builtin_tool_events:
             builtin_status_lines.extend(
                 [
@@ -230,6 +239,7 @@ def agglomerate_stream_deltas(
     return ChatMessage(
         role=role,
         content=accumulated_content,
+        reasoning_content=accumulated_reasoning or None,
         tool_calls=[
             ChatMessageToolCall(
                 function=ChatMessageToolCallFunction(
@@ -398,6 +408,20 @@ def supports_stop_parameter(model_id: str) -> bool:
 
 
 def is_reasoning_model(model_id: str | None) -> bool:
+    if not model_id:
+        return False
+    model_name = model_id.split("/")[-1].lower()
+    return bool(re.match(r"^(gpt-5|o[134]|o4-mini|deepseek-reasoner)([-\w.]*)$", model_name))
+
+
+def supports_required_tool_choice(model_id: str | None) -> bool:
+    if not model_id:
+        return True
+    model_name = model_id.split("/")[-1].lower()
+    return not model_name.startswith("deepseek-reasoner")
+
+
+def prefers_responses_api(model_id: str | None) -> bool:
     if not model_id:
         return False
     model_name = model_id.split("/")[-1].lower()
@@ -722,11 +746,13 @@ class OpenAIServerModel(ApiModel):
             return True
         if self.api_mode == "chat_completions":
             return False
-        return is_reasoning_model(self.model_id)
+        return prefers_responses_api(self.model_id)
 
     def _normalize_tool_choice_for_chat(self, tools_to_call_from: list[Tool] | None, tool_choice: str | dict | None) -> str | dict | None:
         if not tools_to_call_from:
             return None
+        if tool_choice == "required" and not supports_required_tool_choice(self.model_id):
+            return "auto"
         return tool_choice
 
     def _prepare_chat_completions_kwargs(
@@ -823,8 +849,11 @@ class OpenAIServerModel(ApiModel):
 
         if tools_to_call_from:
             responses_kwargs["tools"] = [get_responses_tool_json_schema(tool) for tool in tools_to_call_from]
-            if tool_choice is not None:
-                responses_kwargs["tool_choice"] = tool_choice
+            normalized_tool_choice = tool_choice
+            if normalized_tool_choice == "required" and not supports_required_tool_choice(self.model_id):
+                normalized_tool_choice = "auto"
+            if normalized_tool_choice is not None:
+                responses_kwargs["tool_choice"] = normalized_tool_choice
 
         responses_kwargs.update(kwargs)
         return responses_kwargs
@@ -848,14 +877,16 @@ class OpenAIServerModel(ApiModel):
 
     def _normalize_chat_completions_response(self, response: Any) -> ChatMessage:
         token_usage = self._extract_token_usage_from_response(response)
-        return ChatMessage.from_dict(
-            response.choices[0].message.model_dump(include={"role", "content", "tool_calls"}),
-            raw=response,
-            token_usage=token_usage,
-        )
+        message = response.choices[0].message
+        payload = message.model_dump(include={"role", "content", "tool_calls"})
+        reasoning_content = getattr(message, "reasoning_content", None)
+        if reasoning_content:
+            payload["reasoning_content"] = reasoning_content
+        return ChatMessage.from_dict(payload, raw=response, token_usage=token_usage)
 
     def _normalize_responses_response(self, response: Any) -> ChatMessage:
         content_parts: list[str] = []
+        reasoning_parts: list[str] = []
         tool_calls: list[ChatMessageToolCall] = []
         for output_item in getattr(response, "output", []) or []:
             item_type = getattr(output_item, "type", None)
@@ -863,6 +894,8 @@ class OpenAIServerModel(ApiModel):
                 for content_item in getattr(output_item, "content", []) or []:
                     if getattr(content_item, "type", None) == "output_text":
                         content_parts.append(getattr(content_item, "text", ""))
+                    elif getattr(content_item, "type", None) in {"reasoning", "reasoning_text", "reasoning_summary_text"}:
+                        reasoning_parts.append(getattr(content_item, "text", ""))
             elif item_type == "function_call":
                 tool_calls.append(
                     ChatMessageToolCall(
@@ -878,6 +911,7 @@ class OpenAIServerModel(ApiModel):
         return ChatMessage(
             role=MessageRole.ASSISTANT,
             content="".join(content_parts) if content_parts else None,
+            reasoning_content="".join(reasoning_parts) if reasoning_parts else None,
             tool_calls=tool_calls or None,
             raw=response,
             token_usage=self._extract_token_usage_from_response(response),
@@ -902,7 +936,10 @@ class OpenAIServerModel(ApiModel):
             )
 
         if event_type == "response.reasoning_summary_text.delta":
-            return ChatMessageStreamDelta(content=getattr(event, "delta", None))
+            return ChatMessageStreamDelta(reasoning_content=getattr(event, "delta", None))
+
+        if event_type == "response.reasoning.delta":
+            return ChatMessageStreamDelta(reasoning_content=getattr(event, "delta", None))
 
         if event_type == "response.output_text.delta":
             return ChatMessageStreamDelta(content=getattr(event, "delta", None))
@@ -1022,6 +1059,7 @@ class OpenAIServerModel(ApiModel):
                 if choice.delta:
                     yield ChatMessageStreamDelta(
                         content=choice.delta.content,
+                        reasoning_content=getattr(choice.delta, "reasoning_content", None),
                         tool_calls=[
                             ChatMessageToolCallStreamDelta(
                                 index=delta.index,

@@ -352,6 +352,13 @@ def _format_streaming_markdown(text: str) -> str:
     return _render_streaming_reply(text)
 
 
+def _format_reasoning_markdown(text: str) -> str:
+    text = _sanitize_ui_text(text)
+    if not text.strip():
+        return ""
+    return _render_card("思考过程", text, "#6366f1", subtitle="Reasoning")
+
+
 def _clean_model_output(model_output: str) -> str:
     """
     通过移除尾部标签和多余的引号来清理模型输出。
@@ -636,7 +643,10 @@ def stream_to_gradio(
             if event.builtin_tool_events:
                 for message in _process_builtin_tool_events(event.builtin_tool_events):
                     yield message
-            text = agglomerate_stream_deltas(accumulated_events).render_as_markdown()
+            aggregated = agglomerate_stream_deltas(accumulated_events)
+            if aggregated.reasoning_content:
+                yield {"type": "reasoning", "content": aggregated.reasoning_content}
+            text = aggregated.render_as_markdown(include_reasoning=False)
             text = re.sub(r"\n\[(?:[a-z_]+_call|mcp_list_tools)\] [a-z_]+(?: \([^)]+\))?", "", text)
             # 解码 Unicode 转义字符
             decoded_text = decode_unicode_escapes(text)
@@ -725,6 +735,7 @@ class GradioUI:
         try:
             messages = [msg for msg in messages if _message_metadata(msg).get("id") != "streaming-reply"]
             streaming_index = None
+            reasoning_index = None
 
             for msg in stream_to_gradio(
                 session_state["agent"], task=prompt, reset_agent_memory=self.reset_agent_memory
@@ -733,6 +744,8 @@ class GradioUI:
                     if streaming_index is not None and streaming_index < len(messages):
                         messages.pop(streaming_index)
                         streaming_index = None
+                    if reasoning_index is not None and reasoning_index < len(messages):
+                        reasoning_index = None
                     messages.append(msg)
                 elif isinstance(msg, str):  # 那么它只是一个完成增量
                     if msg.strip() in {"...", "…", "正在思考...", "正在思考…"}:
@@ -751,6 +764,21 @@ class GradioUI:
                             )
                         )
                         streaming_index = len(messages) - 1
+                elif isinstance(msg, dict) and msg.get("type") == "reasoning":
+                    reasoning_text = _format_reasoning_markdown(msg.get("content", ""))
+                    if not reasoning_text.strip():
+                        continue
+                    if reasoning_index is not None and reasoning_index < len(messages):
+                        _set_message_content(messages[reasoning_index], reasoning_text)
+                    else:
+                        messages.append(
+                            gr.ChatMessage(
+                                role=MessageRole.ASSISTANT,
+                                content=reasoning_text,
+                                metadata={"id": "streaming-reasoning"},
+                            )
+                        )
+                        reasoning_index = len(messages) - 1
                 yield messages
 
             yield messages
